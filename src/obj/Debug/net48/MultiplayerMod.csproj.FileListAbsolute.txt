@@ -1,0 +1,10 @@
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\bin\Debug\net48\MultiplayerMod.dll
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\bin\Debug\net48\MultiplayerMod.pdb
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.csproj.AssemblyReference.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.AssemblyInfoInputs.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.AssemblyInfo.cs
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.csproj.CoreCompileInputs.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.sourcelink.json
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.dll
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Multiplayer\src\obj\Debug\net48\MultiplayerMod.pdb

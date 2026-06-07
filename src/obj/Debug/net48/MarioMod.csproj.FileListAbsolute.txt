@@ -1,0 +1,9 @@
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\bin\Debug\net48\MarioMod.dll
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\bin\Debug\net48\MarioMod.pdb
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.csproj.AssemblyReference.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.AssemblyInfoInputs.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.AssemblyInfo.cs
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.csproj.CoreCompileInputs.cache
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.dll
+C:\Users\Kaiden\Documents\All K2's Stuff\Cursed Words Stuff\Cursed Words Mods\CW Mario Mod\src\obj\Debug\net48\MarioMod.pdb
