@@ -10,6 +10,9 @@ using Steamworks;
 using System;
 using System.Linq;
 using System.Text;
+using System.IO;
+using Mono.Cecil;
+using AsmResolver.Patching;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -155,9 +158,11 @@ namespace CWMultiplayer
     #region Networking Stuff
     public class CursedNetworking
     {
+        #region Variables
         public static Socket myClient;
         public static TcpListener server;
-        public static IPEndPoint iPEndPoint;
+        public static IPEndPoint serverEndPoint;
+        public static IPAddress randIPAddress = IPAddress.Parse("000.000.000.000"); //Randomly Generated IP
         public static List<int> allActivePorts = new List<int>();
         public static int port;
         public static bool isHost = true;
@@ -182,86 +187,110 @@ namespace CWMultiplayer
                 health = currHealth;
             }
         }
+        #endregion
 
         public static async Task SetUpNetworking()
         {
             PlayerPacket myPlayerPacket = new PlayerPacket("", MultiplayerManager.health);
 
-            port = 2026;
-            if (isHost)
-            {
-                server = new TcpListener(IPAddress.Loopback, port);
-                server.Start();
-            }
-            iPEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+            port = 54321;
+            serverEndPoint = new IPEndPoint(IPAddress.IPv6Loopback, port);
 
-            using Socket client = new(
-                iPEndPoint.AddressFamily,
+                server = new TcpListener(IPAddress.IPv6Any, port);
+                server.Server.DualMode = true;
+                server.Start();
+                // Start the server loop in the background so it doesn't block the client
+                _ = Task.Run(() => StartServerLoopAsync());
+            
+            myClient = new(
+                serverEndPoint.AddressFamily,
                 SocketType.Stream,
                 ProtocolType.Tcp
             );
-            myClient = client;
-            await myClient.ConnectAsync(iPEndPoint);
-            
+
+            MelonLogger.Msg("Connectiong To Server...");
+            await myClient.ConnectAsync(serverEndPoint);
             MelonLogger.Msg("Client Connected!");
-            
-            while(myClient.Connected)
+
+
+            using NetworkStream stream = new NetworkStream(myClient, ownsSocket: false);
+            using StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
+            using StreamReader reader = new StreamReader(stream);
+
+            while(true)
             {
                 await Task.Delay(1000);
+
                 if(myPlayerPacket.playerName == "")
                 {
-                    if(SteamManager.Initialized)
-                    {
-                        string steamName = SteamFriends.GetPersonaName();
-                        myPlayerPacket.playerName = steamName;
-                        MelonLogger.Msg(steamName);
-                    }
+                    if(isHost)
+                        myPlayerPacket.playerName = "Purely_K2";
                     else
-                    {
-                        myPlayerPacket.playerName = "Unnamed";
-                    }
+                        myPlayerPacket.playerName = "Tech";
                 }
                 else
                 {
-                    SendVariablesToServer(myPlayerPacket);
-                    TakeVariablesFromServer();
+                    await SendAndReceiveServerStuff(myPlayerPacket, writer, reader);
                 }
-                MelonLogger.Msg("Updated");
             }
         }
-        public static async void SendVariablesToServer(PlayerPacket playerPacket)
+        #region Server Stuff
+        // Background server task to handle incoming connections
+        private static async Task StartServerLoopAsync()
         {
-            if(isHost)
-            {
-            }
-            if(playerPacket.playerName == "")
-            {
-                //add packet to server packets list (If needed)
-            }
-            byte[] nameBytes = new byte[1024];
-            myClient.SendTo(nameBytes, myClient.RemoteEndPoint);
-            MelonLogger.Msg("Name Sent");
-        }
-            
-        public static async void TakeVariablesFromServer()
-        {
-            if (isHost)
-            {
-            }
             try
             {
-                byte[] nameBytes = new byte[1024];
-                MelonLogger.Msg(Encoding.UTF8.GetString(nameBytes));
+                MelonLogger.Msg("Server loop started listening...");
+                while (true)
+                {
+                    // Accept the incoming client connection asynchronously
+                    Socket incomingClient = await server.AcceptSocketAsync();
+                    _ = Task.Run(() => HandleIncomingClientAsync(incomingClient));
+                }
             }
-            catch(System.Exception e)
+            catch (ObjectDisposedException) { /* Server stopped */ }
+            catch (Exception ex) { MelonLogger.Msg($"Server error: {ex.Message}"); }
+        }
+        // Echoes back whatever text the client sends
+        private static async Task HandleIncomingClientAsync(Socket clientSocket)
+        {
+            using NetworkStream stream = new NetworkStream(clientSocket, ownsSocket: true);
+            using StreamReader reader = new StreamReader(stream);
+            using StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
+
+            try
             {
-                MelonLogger.Msg(e);
+                while (true)
+                {
+                    string incomingMessage = await reader.ReadLineAsync();
+                    if (incomingMessage == null) break; // Client disconnected
+
+                    await writer.WriteLineAsync($"{incomingMessage} is connected");
+                }
+            }
+            catch (Exception) { /* Handle disconnects cleanly */ }
+        }
+        #endregion
+        public static async Task SendAndReceiveServerStuff(PlayerPacket playerPacket, StreamWriter writer, StreamReader reader)
+        {
+            if (myClient != null && myClient.Connected)
+            {
+                
+                string messageToSend = playerPacket.playerName;
+                await writer.WriteLineAsync(messageToSend);
+
+                string response = await reader.ReadLineAsync();
+                MelonLogger.Msg("Server Says: " + response);
             }
         }
         public static void ShutDownNetwork()
         {
-            if(isHost) server.Stop();
-            myClient.Shutdown(SocketShutdown.Both);
+            if (isHost && server != null) server.Stop();
+            if (myClient != null && myClient.Connected)
+            {
+                myClient.Shutdown(SocketShutdown.Both);
+                myClient.Close();
+            }
         }
     }
 
