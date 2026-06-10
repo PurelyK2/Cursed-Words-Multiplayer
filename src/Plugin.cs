@@ -9,7 +9,7 @@ using TMPro;
 using Steamworks;
 using System.Linq;
 using UnityEngine.InputSystem.UI;
-using Microsoft.SqlServer.Server;
+using System.Security.Policy;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -141,6 +141,12 @@ namespace CWMultiplayer
         }
         //Get Remaining Target (SubmitWord_Ptch moved into boss stuff)
         #endregion
+
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            if(SteamAPI.Init()) SteamAPI.RunCallbacks();
+        }
     }
     public static class ReceivedInfo
     {
@@ -177,10 +183,8 @@ namespace CWMultiplayer
         public static PlayerPacket myPlayerPacket;
         #endregion
 
-        public static async Task SetUpNetworking() //Simulates OnEnable
+        public static void SetUpNetworking() //Simulates OnEnable
         {
-            while(!SteamManager.Initialized){ await Task.Delay(100); }
-            
             System.Environment.SetEnvironmentVariable("SteamAppId", "3856460");
             System.Environment.SetEnvironmentVariable("SteamGameId", "3856460");
 
@@ -189,7 +193,6 @@ namespace CWMultiplayer
             new CursedUI().SetUpUI();
         }
     }
-    #region Custom UI Stuff
     public class CursedUI
     {
         #region GameObjects
@@ -210,9 +213,13 @@ namespace CWMultiplayer
         private static GameObject backButtonObj = new GameObject("Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static List<GameObject> lobbyObjects = new List<GameObject> { canvasObj, eventSystemObj, showLobbyButtonObj, hideLobbyButtonObj, hostButtonObj, lobbyIDObj, lobbyButtonObj, lobbyMenuObj, backButtonObj, lobbyNameInputFieldObj, joinLobbyButtonObj, lobbyIDBackgroundObj };
         #endregion
-        public static List<GameObject> listOfLobbies = new List<GameObject>();
+        #region Steam Callbacks
+        public static CallResult<LobbyMatchList_t> m_lobbyMatchList;
+        public static CallResult<LobbyEnter_t> m_lobbyEnter;
+        #endregion
+        public static List<CSteamID> listOfLobbies = new List<CSteamID>();
         public static CSteamID lobbyID;
-        public static string lobbyCode;
+        public static string lobbyName;
         private static void SetUIHeirarchy()
         {
             //Parenting
@@ -253,6 +260,7 @@ namespace CWMultiplayer
             }
             canvasObj.GetComponent<Canvas>().sortingLayerID = SortingLayer.layers.Count();
             canvasObj.GetComponent<Canvas>().sortingOrder = 999;
+            canvasObj.GetComponent<Image>().enabled = false;
         }
         public static void SetUpUIAppearance()
         {
@@ -439,10 +447,16 @@ namespace CWMultiplayer
             Button joinLobbyButton = joinLobbyButtonObj.GetComponent<Button>();
             if(joinLobbyButton != null)
             {
-                joinLobbyButton.onClick.AddListener(JoinLobby);
+                joinLobbyButton.onClick.AddListener(TryJoinLobby);
             }
             #endregion
+            
+            #region Steam Callbacks
+            m_lobbyMatchList = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
+            m_lobbyEnter = CallResult<LobbyEnter_t>.Create(OnLobbyEnter);
+            #endregion
         }
+
         #region Button Callbacks
         public static void GetLobbiesList()
         {
@@ -474,12 +488,35 @@ namespace CWMultiplayer
                 thisObject.SetActive(!new List<GameObject> { backButtonObj, showLobbyButtonObj, lobbyNameInputFieldObj, lobbyIDBackgroundObj }.Contains(thisObject));
             }
             lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Waiting...";
+            if(lobbyName != "")
+            {
+                SteamMatchmaking.LeaveLobby(lobbyID);
+                lobbyName = "";
+            }
         }
-        public static void JoinLobby()
+        public static void TryJoinLobby()
         {
             foreach (var thisObject in lobbyObjects)
             {
                 thisObject.SetActive(!new List<GameObject> { hostButtonObj, lobbyButtonObj, showLobbyButtonObj, lobbyNameInputFieldObj }.Contains(thisObject));
+            }
+            try
+            {
+                string inputLobbyCode = lobbyNameInputFieldObj.GetComponent<TMP_InputField>().text.Trim();
+
+                if(inputLobbyCode == "")
+                {
+                    MelonLogger.Msg("Getting Random Lobby");
+                }
+                
+                lobbyName = "Random";
+                SteamMatchmaking.AddRequestLobbyListResultCountFilter(100);
+                SteamAPICall_t lobbyRequest = SteamMatchmaking.RequestLobbyList();
+                m_lobbyMatchList.Set(lobbyRequest);
+            }
+            catch(System.Exception e)
+            {
+                MelonLogger.Msg(e);
             }
         }
         public static void HostLobby()
@@ -495,15 +532,28 @@ namespace CWMultiplayer
             
             try
             {
-                SteamAPICall_t newLobby = SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 2);
+                SteamAPICall_t newLobby = SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 100);
                 lobbyID = (CSteamID)newLobby.m_SteamAPICall;
-                lobbyCode = ((ulong)lobbyID % 10000).ToString("D5");
-                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby Code: " + lobbyID;
+
+                //make lobby name
+                string alphaneumerics = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                lobbyName = "";
+                for(int i = 0; i < 6; i++)
+                {
+                    lobbyName += alphaneumerics[Random.Range(0, alphaneumerics.Length)];
+                }
+
+                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby Name: N/A";
+                SteamMatchmaking.SetLobbyData(lobbyID, "LobbyName", lobbyName);
+                MelonLogger.Msg("Lobby Code: Not Working");
             }
             catch(System.Exception e)
             {
                 MelonLogger.Msg(e);
             }
+
+            SteamAPICall_t lobbyRequest = SteamMatchmaking.RequestLobbyList();
+            m_lobbyMatchList.Set(lobbyRequest);
 
             CursedNetworking.isHost = true;
             if(CursedNetworking.myPlayerPacket.playerName == "")
@@ -511,7 +561,47 @@ namespace CWMultiplayer
                 CursedNetworking.myPlayerPacket.playerName = "Player 1";
             }
         }
+        void OnLobbyMatchList(LobbyMatchList_t pCallback, bool bIOFailure)
+        {
+            MelonLogger.Msg("Getting A List Of Lobbies");
+
+            if(bIOFailure)
+            {
+                MelonLogger.Msg("Failed To Reach Steam Matchmaking");
+                return;
+            }
+
+            listOfLobbies.Clear();
+
+            for (int i = 0; i < pCallback.m_nLobbiesMatching; i++)
+            {
+                CSteamID tempLobbyID = SteamMatchmaking.GetLobbyByIndex(i);
+                listOfLobbies.Add(tempLobbyID);
+            }
+            MelonLogger.Msg(listOfLobbies.Count + " Lobbies Found");
+
+            if(lobbyName == "Random" && listOfLobbies.Count > 0)
+            {
+                foreach(var lobby in listOfLobbies)
+                {
+                    MelonLogger.Msg("Joining Lobby");
+                    SteamMatchmaking.JoinLobby(lobby);
+                    return;
+                }
+            }
+        }
+        private void OnLobbyEnter(LobbyEnter_t callback, bool bIOFailure)
+        {
+            MelonLogger.Msg("Joined Lobby");
+            if(callback.m_EChatRoomEnterResponse != 1)
+            {
+                MelonLogger.Msg("Failed To Enter Lobby: " + (uint)callback.m_EChatRoomEnterResponse);
+                return;
+            }
+            lobbyID = (CSteamID)callback.m_ulSteamIDLobby;
+            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Joined Lobby!";
+
+        }
         #endregion
     }
-    #endregion
 }
