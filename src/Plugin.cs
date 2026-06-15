@@ -162,6 +162,9 @@ namespace CWMultiplayer
         }
         //Get Remaining Target (SubmitWord_Ptch moved into boss stuff)
         #endregion
+        
+        #region Other Stuff
+        private static Vector2 resolution = new Vector2(Screen.width, Screen.height);
         public override void OnUpdate()
         {
             base.OnUpdate();
@@ -173,7 +176,24 @@ namespace CWMultiplayer
                 ReceivedInfo.hasOpponent = true;
                 MelonLogger.Msg("2 People In Lobby!");
             }
+
+            //Resolution Stuff
+            if(resolution.x != Screen.width || resolution.y != Screen.height)
+            {
+                resolution.x = Screen.width;
+                resolution.y = Screen.height;
+                CursedUI.SetUpUIAppearance();
+            }
         }
+        [HarmonyPatch(typeof(ResolutionConfigUtility), "UpdateDisplaySettings", new System.Type[] { typeof(Resolution) })]
+        public static class UpdateDisplaySettings_Patch
+        {
+            public static void Postfix()
+            {
+                CursedUI.SetUpUIAppearance();
+            }
+        }
+        #endregion
     }
     public static class ReceivedInfo
     {
@@ -260,7 +280,7 @@ namespace CWMultiplayer
 
             if(lobbyData.Count() == 4 && int.TryParse(lobbyDataList[2], out int highScoreInt) && int.TryParse(lobbyDataList[3], out int health))
             {
-                if(lobbyDataList[0] != myPlayerPacket.playerName)
+                if(lobbyDataList[0] != myPlayerPacket.playerName || true)//REMOVE "|| true" !!!
                 {
                     ReceivedInfo.hasOpponent = true;
                     ReceivedInfo.opponentIsInBoss = lobbyDataList[1] == "true";
@@ -284,7 +304,7 @@ namespace CWMultiplayer
             }
         }
     }
-    public class CursedUI //CANVAS NEEDS FIXING ON LINE 360 FOR IT TO SHOW UP!!!
+    public class CursedUI
     {
         #region GameObjects
         public static GameObject canvasObj = new GameObject("Canvas", new System.Type[] { typeof(Canvas), typeof(RectTransform), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(CursedUI), typeof(UnityEngine.UI.Image) });
@@ -301,9 +321,16 @@ namespace CWMultiplayer
         private static GameObject inputFieldTextObj = new GameObject("Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         private static GameObject inputFieldPlaceholderObj = new GameObject("Placeholder", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         private static GameObject joinLobbyButtonObj = new GameObject("Join Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject backButtonObj = new GameObject("Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        private static GameObject backButtonObj = new GameObject("Back Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static List<GameObject> lobbyObjects = new List<GameObject> { canvasObj, eventSystemObj, showLobbyButtonObj, hideLobbyButtonObj, hostButtonObj, lobbyIDObj, lobbyButtonObj, lobbyMenuObj, backButtonObj, lobbyNameInputFieldObj, joinLobbyButtonObj, lobbyIDBackgroundObj };
         public static GameObject waitingTextObj = new GameObject("Waiting Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        
+        public static GameObject showLobbyButtonTextObj = new GameObject("Show Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public static GameObject hideLobbyButtonTextObj = new GameObject("Hide Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public static GameObject hostLobbyButtonTextObj = new GameObject("Host Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public static GameObject lobbyButtonTextObj = new GameObject("Lobby Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public static GameObject joinLobbyButtonTextObj = new GameObject("Join Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public static GameObject backLobbyButtonTextObj = new GameObject("Back Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         #endregion
         #region Steam Callbacks
         public static Callback<LobbyMatchList_t> m_lobbyMatchList;
@@ -331,6 +358,13 @@ namespace CWMultiplayer
             lobbyIDBackgroundObj.transform.SetParent(canvasObj.transform);
             lobbyIDObj.transform.SetParent(lobbyIDBackgroundObj.transform);
             waitingTextObj.transform.SetParent(canvasObj.transform);
+                //Text Objects
+                showLobbyButtonTextObj.transform.SetParent(showLobbyButtonObj.transform);
+                hideLobbyButtonTextObj.transform.SetParent(hideLobbyButtonObj.transform);
+                hostLobbyButtonTextObj.transform.SetParent(hostButtonObj.transform);
+                lobbyButtonTextObj.transform.SetParent(lobbyButtonObj.transform);
+                joinLobbyButtonTextObj.transform.SetParent(joinLobbyButtonObj.transform);
+                backLobbyButtonTextObj.transform.SetParent(backButtonObj.transform);
 
             //Iteration Through All
             foreach(var thisObject in lobbyObjects)
@@ -353,11 +387,11 @@ namespace CWMultiplayer
                 canvasImage.color = new UnityEngine.Color(0, 0, 0, 0);
                 canvasImage.raycastTarget = true;
             }
+            canvasObj.GetComponent<Canvas>().sortingLayerID = SortingLayer.layers.Count() - 1;
             canvasObj.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
             try
             {
-                canvasObj.GetComponent<CanvasScaler>().referenceResolution = new Vector2(1920, 1080);
-                canvasObj.GetComponent<CanvasScaler>().screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+                canvasObj.GetComponent<CanvasScaler>().referenceResolution = new Vector2(Screen.width * 2, Screen.height * 2);
                 canvasObj.GetComponent<CanvasScaler>().matchWidthOrHeight = 0.5f;
             }
             catch(System.Exception e)
@@ -371,25 +405,28 @@ namespace CWMultiplayer
         {
             SetUIHeirarchy();
 
+            canvasObj.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            canvasObj.GetComponent<CanvasScaler>().referenceResolution = new Vector2(Screen.width, Screen.height);
+            
             #region Text Stuff
             RectTransform lobbyIDRect = lobbyIDObj.GetComponent<RectTransform>();
             if(lobbyIDRect != null)
             {
-                lobbyIDRect.position = new Vector3(0, 0, 0);
-                lobbyIDRect.sizeDelta = new Vector2(100, 1);
+                lobbyIDRect.localPosition = new Vector3(0, 0, 0);
+                lobbyIDRect.sizeDelta = new Vector2(800, 150);
             }
                 TextMeshProUGUI lobbyIDText = lobbyIDObj.GetComponent<TextMeshProUGUI>();
                 if(lobbyIDText != null)
                 {
                     lobbyIDText.color = new Color32(255, 255, 255, 255); 
-                    lobbyIDText.fontSize = 1;
+                    lobbyIDText.fontSize = 100;
                     lobbyIDText.alignment = TextAlignmentOptions.Center;
                 }
             RectTransform lobbyIDBackgroundRect = lobbyIDBackgroundObj.GetComponent<RectTransform>();
             if(lobbyIDBackgroundRect != null)
             {
-                lobbyIDBackgroundRect.position = new Vector3(0, 5, 0);
-                lobbyIDBackgroundRect.sizeDelta = new Vector2(12, 2);
+                lobbyIDBackgroundRect.localPosition = new Vector3(0, Screen.height / 4, 0);
+                lobbyIDBackgroundRect.sizeDelta = new Vector2(800, 150);
             }
                 UnityEngine.UI.Image lobbyIDBackgroundImg = lobbyIDBackgroundObj.GetComponent<UnityEngine.UI.Image>();
                 if(lobbyIDBackgroundImg != null)
@@ -399,69 +436,158 @@ namespace CWMultiplayer
             RectTransform waitingTextRect = waitingTextObj.GetComponent<RectTransform>();
             if(waitingTextRect != null)
             {
-                waitingTextRect.position = new Vector3(0, 0);
-                waitingTextRect.sizeDelta = new Vector2(100, 1);
+                waitingTextRect.localPosition = new Vector3(0, 0);
+                waitingTextRect.sizeDelta = new Vector2(500, 100);
             }
                 TextMeshProUGUI waitingText = waitingTextObj.GetComponent<TextMeshProUGUI>();
                 if(waitingText != null)
                 {
                     waitingText.text = "Waiting For Opponent...";
-                    waitingText.autoSizeTextContainer = false;
-                    waitingText.fontSize = 1;
+                    waitingText.autoSizeTextContainer = true;
                     waitingText.alignment = TextAlignmentOptions.Center;
                 }
             waitingTextObj.SetActive(false);
+
+            TextMeshProUGUI showLobbyButtonText = showLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(showLobbyButtonText != null)
+            {
+                showLobbyButtonText.text = "Open";
+                showLobbyButtonText.fontSize = 50;
+                showLobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
+            TextMeshProUGUI hideLobbyButtonText = hideLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(hideLobbyButtonText != null)
+            {
+                hideLobbyButtonText.text = "Close";
+                hideLobbyButtonText.fontSize = 50;
+                hideLobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
+            TextMeshProUGUI hostLobbyButtonText = hostLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(hostLobbyButtonText != null)
+            {
+                hostLobbyButtonText.text = "Host Lobby";
+                hostLobbyButtonText.fontSize = 100;
+                hostLobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
+            TextMeshProUGUI lobbyButtonText = lobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(lobbyButtonText != null)
+            {
+                lobbyButtonText.text = "Find Lobby";
+                lobbyButtonText.fontSize = 100;
+                lobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
+            TextMeshProUGUI joinLobbyButtonText = joinLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(joinLobbyButtonText != null)
+            {
+                joinLobbyButtonText.text = "Join";
+                joinLobbyButtonText.fontSize = 75;
+                joinLobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
+            TextMeshProUGUI backLobbyButtonText = backLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(backLobbyButtonText != null)
+            {
+                backLobbyButtonText.text = "Back";
+                backLobbyButtonText.fontSize = 50;
+                backLobbyButtonText.alignment = TextAlignmentOptions.Center;
+            }
             #endregion
             #region Buttons Appearance
             RectTransform showLobbyButtonRect = showLobbyButtonObj.GetComponent<RectTransform>();
             if(showLobbyButtonRect != null)
             {
-                showLobbyButtonRect.position = new Vector3(-8f, 5.75f,0);
-                showLobbyButtonRect.sizeDelta = new Vector2(1.5f, 0.9f);
+                showLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 3 / 8, 0);
+                showLobbyButtonRect.sizeDelta = new Vector2(200, 100);
             }
+                UnityEngine.UI.Image showLobbyButtonImg = showLobbyButtonObj.GetComponent<Image>();
+                if(showLobbyButtonImg != null)
+                {
+                    showLobbyButtonImg.color = new UnityEngine.Color(0.25f, 0.25f, 0.25f, 0.95f);
+                }
             RectTransform hideLobbyButtonRect = hideLobbyButtonObj.GetComponent<RectTransform>();
             if(hideLobbyButtonRect != null)
             {
-                hideLobbyButtonRect.position = new Vector3(-8f, 5.75f,0);
-                hideLobbyButtonRect.sizeDelta = new Vector2(1.5f, 0.9f);
+                hideLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 3 / 8, 0);
+                hideLobbyButtonRect.sizeDelta = new Vector2(200, 100);
             }
+                UnityEngine.UI.Image hideLobbyButtonImg = hideLobbyButtonObj.GetComponent<Image>();
+                if(hideLobbyButtonImg != null)
+                {
+                    hideLobbyButtonImg.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
+                }
             RectTransform hostButtonRect = hostButtonObj.GetComponent<RectTransform>();
             if(hostButtonRect != null)
             {
-                hostButtonRect.position = new Vector3(0, 2, 0);
-                hostButtonRect.sizeDelta = new Vector2(5, 1.5f);
+                hostButtonRect.localPosition = new Vector3(0, Screen.height / 10, 0);
+                hostButtonRect.sizeDelta = new Vector2(600, 150);
             }
+                UnityEngine.UI.Image hostButtonImg = hostButtonObj.GetComponent<Image>();
+                if(hostButtonImg != null)
+                {
+                    hostButtonImg.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
+                }
+                RectTransform hostTextRect = hostLobbyButtonTextObj.GetComponent<RectTransform>();
+                if(hostTextRect != null)
+                {
+                    hostTextRect.sizeDelta = new Vector2(600, 150);
+                }
             RectTransform lobbyButtonRect = lobbyButtonObj.GetComponent<RectTransform>();
             if(lobbyButtonRect != null)
             {
-                lobbyButtonRect.position = new Vector3(0, 0, 0);
-                lobbyButtonRect.sizeDelta = new Vector2(5, 1.5f);
+                lobbyButtonRect.localPosition = new Vector3(0, -1 * Screen.height / 10, 0);
+                lobbyButtonRect.sizeDelta = new Vector2(600, 150);
             }
+                UnityEngine.UI.Image lobbyButtonImg = lobbyButtonObj.GetComponent<Image>();
+                if(lobbyButtonImg != null)
+                {
+                    lobbyButtonImg.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
+                }
+                RectTransform lobbyTextRect = lobbyButtonTextObj.GetComponent<RectTransform>();
+                if(lobbyTextRect != null)
+                {
+                    lobbyTextRect.sizeDelta = new Vector2(600, 150);
+                }
             RectTransform backButtonRect = backButtonObj.GetComponent<RectTransform>();
             if(backButtonRect != null)
             {
-                backButtonRect.position = new Vector3(-6, -3, 0);
-                backButtonRect.sizeDelta = new Vector2(1.5f, 0.9f);
+                backButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, -1 * Screen.height * 3 / 8, 0);
+                backButtonRect.sizeDelta = new Vector2(150, 70);
             }
+                UnityEngine.UI.Image backButtonImg = backButtonObj.GetComponent<Image>();
+                if(backButtonImg != null)
+                {
+                    backButtonImg.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
+                }
             RectTransform inputFieldRect = lobbyNameInputFieldObj.GetComponent<RectTransform>();
             if(inputFieldRect != null)
             {
-                inputFieldRect.position = new Vector3(0, 3, 0);
-                inputFieldRect.sizeDelta = new Vector2(10, 1.5f);
+                inputFieldRect.localPosition = new Vector3(0, 200, 0);
+                inputFieldRect.sizeDelta = new Vector2(800, 150);
             }
             RectTransform joinButtonRect = joinLobbyButtonObj.GetComponent<RectTransform>();
             if(joinButtonRect != null)
             {
-                joinButtonRect.position = new Vector3(0, 1, 0);
-                joinButtonRect.sizeDelta = new Vector2(5, 1);
+                joinButtonRect.localPosition = new Vector3(0, -150, 0);
+                joinButtonRect.sizeDelta = new Vector2(400, 100);
             }
+                UnityEngine.UI.Image joinButtonImage = joinLobbyButtonObj.GetComponent<UnityEngine.UI.Image>();
+                if(joinButtonImage != null)
+                {
+                    joinButtonImage.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
+                }
+                TextMeshProUGUI joinButtonText = joinLobbyButtonObj.GetComponent<TextMeshProUGUI>();
+                if(joinButtonText != null)
+                {
+                    joinButtonText.text = "Join Lobby";
+                    joinButtonText.color = new UnityEngine.Color(1, 1, 1, 1);
+                    joinButtonText.alignment = TextAlignmentOptions.Center;
+                }
             #endregion
             #region Other Appearance Stuff
             RectTransform scrollViewRect = scrollViewObj.GetComponent<RectTransform>();
             if(scrollViewRect != null)
             {
-                scrollViewRect.position = new Vector3(0, 1, 0);
-                scrollViewRect.sizeDelta = new Vector2(20, 15);
+                scrollViewRect.localPosition = new Vector3(0, 0, 0);
+                scrollViewRect.sizeDelta = new Vector2(Screen.width, Screen.height);
             }
                 UnityEngine.UI.Image scrollViewImg = scrollViewObj.GetComponent<UnityEngine.UI.Image>();
                 if (scrollViewImg != null)
@@ -483,15 +609,15 @@ namespace CWMultiplayer
                 RectTransform textRect = inputFieldTextObj.GetComponent<RectTransform>();
                 if(textRect != null)
                 {
-                inputFieldRect.position = new Vector3(0, 3, 0);
-                inputFieldRect.sizeDelta = new Vector2(10, 1.5f);
+                    inputFieldRect.localPosition = new Vector3(0, 2 * Screen.height / 10, 0);
+                    inputFieldRect.sizeDelta = new Vector2(800, 150);
                 }
                 TextMeshProUGUI textComponent = inputFieldTextObj.GetComponent<TextMeshProUGUI>();
                 if(textComponent != null)
                 {
                     textComponent.color = new UnityEngine.Color(1, 1, 1, 1);
                     textComponent.alignment = TextAlignmentOptions.Center;
-                    textComponent.fontSize = 1;
+                    textComponent.fontSize = 100;
                 }
                 
                 // Setup placeholder component
@@ -499,8 +625,9 @@ namespace CWMultiplayer
                 RectTransform placeholderRect = inputFieldPlaceholderObj.GetComponent<RectTransform>();
                 if(placeholderRect != null)
                 {
-                inputFieldRect.position = new Vector3(0, 3, 0);
-                inputFieldRect.sizeDelta = new Vector2(10, 1.5f);
+                    inputFieldRect.localPosition = new Vector3(0, 1 * Screen.height / 10, 0);
+                    inputFieldRect.sizeDelta = new Vector2(800, 150);
+                    placeholderRect.sizeDelta = inputFieldRect.sizeDelta;
                 }
                 TextMeshProUGUI placeholder = inputFieldPlaceholderObj.GetComponent<TextMeshProUGUI>();
                 if(placeholder != null)
@@ -508,7 +635,7 @@ namespace CWMultiplayer
                     placeholder.text = "Enter Lobby ID";
                     placeholder.color = new UnityEngine.Color(0.7f, 0.7f, 0.7f, 0.5f);
                     placeholder.alignment = TextAlignmentOptions.Center;
-                    placeholder.fontSize = 1;
+                    placeholder.fontSize = 100;
                 }
                 
                 // Setup input field properties
@@ -517,20 +644,6 @@ namespace CWMultiplayer
                 inputField.caretColor = new UnityEngine.Color(1, 1, 1, 1);
                 inputField.caretWidth = 1;
                 inputField.selectionColor = new UnityEngine.Color(0.65f, 0.8f, 1, 0.75f);
-            }
-            
-            // Join Button Styling
-            UnityEngine.UI.Image joinButtonImage = joinLobbyButtonObj.GetComponent<UnityEngine.UI.Image>();
-            if(joinButtonImage != null)
-            {
-                joinButtonImage.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
-            }
-            TextMeshProUGUI joinButtonText = joinLobbyButtonObj.GetComponent<TextMeshProUGUI>();
-            if(joinButtonText != null)
-            {
-                joinButtonText.text = "Join Lobby";
-                joinButtonText.color = new UnityEngine.Color(1, 1, 1, 1);
-                joinButtonText.alignment = TextAlignmentOptions.Center;
             }
             #endregion
         }
@@ -689,14 +802,28 @@ namespace CWMultiplayer
                 CSteamID tempLobbyID = SteamMatchmaking.GetLobbyByIndex(i);
                 listOfLobbies.Add(tempLobbyID);
             }
-
+            string inputLobbyCode = lobbyNameInputFieldObj.GetComponent<TMP_InputField>().text.Trim();
             foreach(var lobby in listOfLobbies)
             {
-                MelonLogger.Msg("Joining Lobby");
-                SteamMatchmaking.JoinLobby(lobby);
-                return;
+                ulong thisLobbyID = lobby.m_SteamID;
+                if((thisLobbyID % 10000).ToString("D4") == inputLobbyCode)
+                {
+                    MelonLogger.Msg("Found Chosen Lobby! Joining...");
+                    SteamMatchmaking.JoinLobby(lobby);
+                    return;
+                }
+                else if(inputLobbyCode == "" && SteamMatchmaking.GetNumLobbyMembers(lobby) == 1)
+                {
+                    MelonLogger.Msg("Joining Random Lobby");
+                    SteamMatchmaking.JoinLobby(lobby);
+                    return;
+                }
             }
             MelonLogger.Msg("Failed To Get A Lobby To Join");
+            if(inputLobbyCode == "")
+                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "No Lobby Found";
+            else
+                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby Not Found";
         }
         void OnLobbyEnter(LobbyEnter_t callback)
         {
@@ -729,8 +856,7 @@ namespace CWMultiplayer
             lobbyID = (CSteamID)callback.m_ulSteamIDLobby;
             lobbyName = ((ulong)lobbyID % 10000).ToString("D4");
             lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby ID: " + lobbyName;
-
-            SteamMatchmaking.SetLobbyData(lobbyID, "LobbyName", lobbyName);
+            
             MelonLogger.Msg("Lobby Created: " + lobbyID);
         }
         public static void DisableCallbacks()
