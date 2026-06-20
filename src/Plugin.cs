@@ -9,10 +9,24 @@ using Steamworks;
 using System.Linq;
 using UnityEngine.InputSystem.UI;
 using System.Threading.Tasks;
+using System.IO;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
 
+
+/// To do:
+/// 1. Make Images For Hearts Work (Use Emojis?)
+/// 3. Replace boss sprites with foe's character's sprites (for secret characters, use their boss stuff)
+/// 7. If you lose a normal round, lose a heart instead of the game (And maybe get some cash)
+/// 10. Turn Off Continue Button If In Lobby
+/// 13. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 16. Make Fairies AND Diving Mask Ungettable
+/// 17. Add items to affect opponents
+/// 18. Make toggle-able real time or grid-based updates for visual score during boss rounds (in update)
+
+/// 11. Increase Boss Payout To if you won on first grid
+/// 15. Handle BIG NUMBERS!!! (parse as L instead of int)
 namespace CWMultiplayer
 {
     public class MultiplayerManager : MelonMod
@@ -28,8 +42,10 @@ namespace CWMultiplayer
         #region Melon Stuff
         public override void OnInitializeMelon()
         {
+            TextureLoaderMod.TextureLoadInit();
             CursedNetworking.SetUpNetworking();
             MelonLogger.Msg("Loaded Multiplayer Mod");
+            CursedUI.ToggleOverlay(false);
         }
         public override void OnApplicationQuit()
         {
@@ -44,45 +60,82 @@ namespace CWMultiplayer
         #endregion
 
         #region Bosses Stuff
+        //Hyena Override
+        [HarmonyPatch(typeof(EncounterController), "WaitForWordSubmission")]
+        public static class HyenaForcedSell_Patch
+        {
+            public static void Prefix(ref bool ____awaitingForcedSell)
+            {
+                if(ReceivedInfo.hasOpponent) ____awaitingForcedSell = false;
+            }
+        }
+        //Badger Override
+        [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
+        public static class BadgerFewerGrids_Patch
+        {
+            public static void Postfix(ref bool __result)
+            {
+                if(__result && ReceivedInfo.hasOpponent)
+                    MelonLogger.Msg("Removing Boss Modifier");
+                __result = false;
+            }
+        }
         [HarmonyPatch(typeof(EncounterController), "GenerateGrid", new System.Type[] {typeof(bool)})]
         public static class ApplyBossModifier_Patch //inBoss, boss modifiers, total target = 1
         {
             public static void Prefix(ref List<BossModifier> ____bossModifiers)
             {
-                if(____bossModifiers.Count > 0)
+                if(!ReceivedInfo.hasOpponent) return;
+                try
                 {
-                    CursedNetworking.myPlayerPacket.UpdatePacket(true, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
-                }
-                if(ReceivedInfo.hasOpponent) ____bossModifiers = new List<BossModifier>();
+                    if(____bossModifiers.Count > 0)
+                    {
+                        CursedNetworking.myPlayerPacket.UpdatePacket(true, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
+                    }
+                    
+                    ____bossModifiers = new List<BossModifier>();
 
-                if(CursedNetworking.myPlayerPacket.inBoss && ReceivedInfo.hasOpponent)
-                {
-                    if(ReceivedInfo.opponentHighscore > 0)
-                        encounterController.SetTotalTarget(ReceivedInfo.opponentHighscore);
-                    else
-                        encounterController.SetTotalTarget(1);
+                    if(CursedNetworking.myPlayerPacket.inBoss && ReceivedInfo.hasOpponent)
+                    {
+                        if(ReceivedInfo.opponentHighscore.Score > 0)
+                            encounterController.SetTotalTarget((int)ReceivedInfo.opponentHighscore.Score);
+                        else
+                            encounterController.SetTotalTarget(1);
+                    }
                 }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
+                CursedUI.ToggleOverlay(ReceivedInfo.hasOpponent);
             }
         }
         [HarmonyPatch(typeof(EncounterController), "Start")]
         public static class Encounter_Start_Patch //inBoss, boss modifiers, total target = 1
         {
-            public static void Prefix(ref List<BossModifier> ____bossModifiers, ref EncounterController __instance)
+            public static void Prefix(ref List<BossModifier> ____bossModifiers, ref EncounterController __instance, ref EncounterSummaryDisplayController ____encounterSummaryDisplayController)
             {
+                if(!ReceivedInfo.hasOpponent)
+                {
+                    return;
+                }
+
                 encounterController = __instance;
+                encounterSummaryDisplayController = ____encounterSummaryDisplayController;
 
                 if(____bossModifiers.Count > 0)
                 {
                     CursedNetworking.myPlayerPacket.inBoss = true;
                 }
+                if(!CursedNetworking.myPlayerPacket.inBoss) CursedNetworking.myPlayerPacket.highScore = new ScorePacket(0);
                 if(ReceivedInfo.hasOpponent) ____bossModifiers = new List<BossModifier>();
 
                 if(CursedNetworking.myPlayerPacket.inBoss && ReceivedInfo.hasOpponent)
                 {
-                    if(ReceivedInfo.opponentHighscore <= 0)
+                    if(ReceivedInfo.opponentHighscore.Score <= 0)
                         encounterController.SetTotalTarget(1);
                     else
-                        encounterController.SetTotalTarget(ReceivedInfo.opponentHighscore);
+                        encounterController.SetTotalTarget((int)ReceivedInfo.opponentHighscore.Score);
                 }
             }
         }
@@ -91,96 +144,195 @@ namespace CWMultiplayer
         {
             private static async Task AsyncronousWaiting(EncounterController encounterController, List<TileSelection> tiles, List<string> words)
             {
-                await Task.Delay(100);
+                await Task.Delay(1);
                 encounterController.SubmitWord(tiles, words);
             }
             public static bool Prefix(ref int ____remainingGrids, ref EncounterController __instance, ref List<TileSelection> tiles, ref List<string> words, ref GridData ____gridData, ref List<HistoricWord> ____previousWords)
             {
-                if(____remainingGrids <= 0 && ReceivedInfo.hasOpponent)
-                {
-                    if(CursedNetworking.myPlayerPacket.inBoss)
-                    {
-                        MelonLogger.Msg("Finished Battle!");
-                        //Get Final Score To Test For High Score
-                        List<Item> itemsList = new List<Item>();
-                        {
-                            List<Item> list = new List<Item>();
-                            foreach (TileSelection tileSelection in tiles)
-                            {
-                                Tile selectedTile = tileSelection.SelectedTile;
-                                if (selectedTile.GetGlyphType() == GlyphType.ScatteredItem)
-                                {
-                                    list.Add(selectedTile.ScatteredItem);
-                                }
-                            }
-                            list.AddRange(GameStatics.GetPlayer().GetAllItems(false));
+                if(!ReceivedInfo.hasOpponent) return true;
 
-                            itemsList = list;
-                        }
-                        List<ScoreCalcVizInfo> steps = ScoreCalculation.CalculateOverallScore(tiles, words, itemsList, ____previousWords, new List<BossModifier>(), ____gridData, encounterController.CurrentGridsGenerated());
-                        ScorePacket scorePacket = ScoreCalculation.GetScoreFromScoreCalcInfo(steps);
-                        if((int)scorePacket.Score > CursedNetworking.myPlayerPacket.highScore)
+                try
+                {
+		            __instance.SetEncounterThreadStage(EncounterThreadStage.ExecutingWordConsequences);
+                    CursedUI.ToggleOverlay(true);
+                    CursedUI.waitingTextObj.SetActive(true);
+                    CursedUI.overrideWaitingButtonObj.SetActive(true);
+
+                    if(____remainingGrids <= 0 && ReceivedInfo.hasOpponent)
+                    {
+                        if(CursedNetworking.myPlayerPacket.inBoss)
                         {
-                            CursedNetworking.myPlayerPacket.UpdatePacket(false, (int)scorePacket.Score, CursedNetworking.myPlayerPacket.health);
+                            MelonLogger.Msg("Finished Battle!");
+                            //Get Final Score To Test For High Score
+                            List<Item> itemsList = new List<Item>();
+                            {
+                                List<Item> list = new List<Item>();
+                                foreach (TileSelection tileSelection in tiles)
+                                {
+                                    Tile selectedTile = tileSelection.SelectedTile;
+                                    if (selectedTile.GetGlyphType() == GlyphType.ScatteredItem)
+                                    {
+                                        list.Add(selectedTile.ScatteredItem);
+                                    }
+                                }
+                                list.AddRange(GameStatics.GetPlayer().GetAllItems(false));
+
+                                itemsList = list;
+                            }
+                            List<ScoreCalcVizInfo> steps = ScoreCalculation.CalculateOverallScore(tiles, words, itemsList, ____previousWords, new List<BossModifier>(), ____gridData, encounterController.CurrentGridsGenerated());
+                            ScorePacket scorePacket = ScoreCalculation.GetScoreFromScoreCalcInfo(steps);
+                            if(scorePacket > CursedNetworking.myPlayerPacket.highScore)
+                            {
+                                CursedNetworking.myPlayerPacket.UpdatePacket(false, scorePacket, CursedNetworking.myPlayerPacket.health);
+                            }
+                            else
+                            {
+                                CursedNetworking.myPlayerPacket.UpdatePacket(false, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
+                            }
+                        }
+                        //Freezes Game Until Opponent Gets There (If was in boss)
+                        if((ReceivedInfo.opponentHighscore.Score == 0 || ReceivedInfo.opponentIsInBoss) && CursedNetworking.myPlayerPacket.highScore.Score > 0) //haven't imageObjecttten to or are in boss (in boss has high score, out of it doesn't)
+                        {
+                            _ = AsyncronousWaiting(__instance, tiles, words);
+                            return false;
                         }
                         else
                         {
-                            CursedNetworking.myPlayerPacket.UpdatePacket(false, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
+                            MelonLogger.Msg("Opponent Is Done, continuing...");
                         }
-                    }
-                    //Freezes Game Until Opponent Gets There (If was in boss)
-                    if((ReceivedInfo.opponentHighscore == 0 || ReceivedInfo.opponentIsInBoss) && CursedNetworking.myPlayerPacket.highScore > 0) //haven't gotten to or are in boss (in boss has high score, out of it doesn't)
-                    {
-                        MelonLogger.Msg("Waiting");
-                        _ = AsyncronousWaiting(__instance, tiles, words);
-                        return false;
-                    }
-                    else
-                    {
-                        MelonLogger.Msg("Opponent Is Done, continuing...");
-                    }
-                    if(CursedNetworking.myPlayerPacket.highScore > 0)
-                    {
-                        if(CursedNetworking.myPlayerPacket.highScore > ReceivedInfo.opponentHighscore && ReceivedInfo.opponentHealth - 1 <= 0)
+                        if(CursedNetworking.myPlayerPacket.highScore.Score > 0)
                         {
-                            GameStatics.GetPlayer().CurrentRunProgress.SetStage(GameStatics.GetNumberOfStages());
-                            GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType = NodeType.Boss;
-                            GameStatics.GetPlayer().HasFacedUncursedBoss = true;
+                            if(CursedNetworking.myPlayerPacket.highScore > ReceivedInfo.opponentHighscore && ReceivedInfo.opponentHealth <= 0)
+                            {
+                                GameStatics.GetPlayer().CurrentRunProgress.SetStage(GameStatics.GetNumberOfStages());
+                                GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType = NodeType.Boss;
+                                GameStatics.GetPlayer().HasFacedUncursedBoss = true;
+                            }
                         }
+                        MelonLogger.Msg("Deciding Who Won Between " + CursedNetworking.myPlayerPacket.highScore + " and " + ReceivedInfo.opponentHighscore);
                     }
-                    MelonLogger.Msg("Deciding Who Won Between " + CursedNetworking.myPlayerPacket.highScore + " and " + ReceivedInfo.opponentHighscore);
                 }
+                catch (System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
+                MelonLogger.Msg("Finished Stuff");
+                CursedUI.overrideWaitingButtonObj.SetActive(false);
+                CursedUI.waitingTextObj.SetActive(false);
+                CursedUI.ToggleOverlay(false);
                 return true;
             }
-            public static void Postfix(ref ScorePacket ____remainingTarget, ref int ____remainingGrids, ref EncounterController __instance)
+            public static void Postfix(ref ScorePacket ____remainingTarget, ref int ____totalGridsPerRound, ref int ____remainingGrids, ref EncounterController __instance)
             {
-                if (CursedNetworking.myPlayerPacket.inBoss && ____remainingGrids > 0 && ReceivedInfo.hasOpponent)
+                if(!ReceivedInfo.hasOpponent) return;
+
+                try
                 {
-                    if(ReceivedInfo.opponentHighscore > 0)
-                        ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore);
-                    else ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + 1);
-                    if(mostRecentScorePacket.Score > CursedNetworking.myPlayerPacket.highScore) CursedNetworking.myPlayerPacket.UpdatePacket(true, (int)mostRecentScorePacket.Score, CursedNetworking.myPlayerPacket.health);
-                    else MelonLogger.Msg("Not Highest Score");
-                }
-                else if(CursedNetworking.myPlayerPacket.highScore > 0 && ReceivedInfo.opponentHighscore > 0 && !ReceivedInfo.opponentIsInBoss)
-                {
-                    if(ReceivedInfo.opponentHighscore > CursedNetworking.myPlayerPacket.highScore)
+                    if (CursedNetworking.myPlayerPacket.inBoss && ____remainingGrids > 0 && ReceivedInfo.hasOpponent)
                     {
-                        CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
-                        MelonLogger.Msg("You Lost A Life!\nCurrent Life: " + CursedNetworking.myPlayerPacket.health);
+                        if(ReceivedInfo.opponentHighscore.Score > 0)
+                            ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
+                        else ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + 1);
+                        if(mostRecentScorePacket > CursedNetworking.myPlayerPacket.highScore) CursedNetworking.myPlayerPacket.UpdatePacket(true, mostRecentScorePacket, CursedNetworking.myPlayerPacket.health);
+                        else MelonLogger.Msg("Not Highest Score");
                     }
-                    else
+                    else if(CursedNetworking.myPlayerPacket.highScore.Score > 0 && ReceivedInfo.opponentHighscore.Score > 0 && !ReceivedInfo.opponentIsInBoss && !CursedNetworking.myPlayerPacket.inBoss)
                     {
-                        MelonLogger.Msg("You Won The Floor!");
+                        if(ReceivedInfo.opponentHighscore > CursedNetworking.myPlayerPacket.highScore)
+                        {
+                            CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
+                            MelonLogger.Msg("You Lost A Life!\nCurrent Life: " + CursedNetworking.myPlayerPacket.health);
+                        }
+                        else if(ReceivedInfo.opponentHighscore == CursedNetworking.myPlayerPacket.highScore)
+                        {
+                            MelonLogger.Msg("You Tied And Both Lose A Life!");
+                        }
+                        else
+                        {
+                            MelonLogger.Msg("You Won The Floor!");
+                            ReceivedInfo.opponentHealth -= 1;
+                        }
+
+                        if(CursedNetworking.myPlayerPacket.health > 0)
+                        {
+                            MelonLogger.Msg("You are continuing");
+                            ____remainingTarget = new ScorePacket(-1);
+                            
+                            //Boss Money
+                            Player player = GameStatics.GetPlayer();
+                            int gridsForMoney = ____totalGridsPerRound - 1;
+
+                            player.ChangeMoney(gridsForMoney * 2);
+                        }
+                        else
+                        {
+                            MelonLogger.Msg("Game Over! You lose!");
+                            ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
+                            ReceivedInfo.ResetInfo();
+                            CursedNetworking.myPlayerPacket.ResetPacket();
+                        }
+
+                        ReceivedInfo.opponentHighscore = new ScorePacket(0);
+                        _ = AsyncReset();
                     }
 
-                    if(CursedNetworking.myPlayerPacket.health > 0) ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score - 1);
-                    else ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + 1);
-                    
-                    CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, 0, CursedNetworking.myPlayerPacket.health);
+                    currentRemainingTarget = ____remainingTarget;
+                    CursedUI.UpdateHearts(CursedNetworking.myPlayerPacket.health, ReceivedInfo.opponentHealth);
                 }
+                catch (System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
+                if(!(CursedNetworking.myPlayerPacket.highScore.Score > 0 && !CursedNetworking.myPlayerPacket.inBoss))
+                    CursedUI.ToggleOverlay(false);
+            }
+            private static async Task AsyncReset()
+            {
+                await Task.Delay(10000);
+                
+                CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
+            }
+        }
+        //Boss Draft Stuff
+        [HarmonyPatch(typeof(BossDraftController), "Start")]
+        public static class BossDraft_Patch
+        {
+            public static void Postfix(ref bool ____isBossSelected, ref BossDraftController __instance, ref BossDraftVisualController ____visualController)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
 
-                currentRemainingTarget = ____remainingTarget;
+                try
+                {
+                    ____visualController.Select(true);
+                    __instance.BossSelectButtonCallback();
+                }
+                catch (System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
+            }
+        }
+        #endregion
+
+        #region My UI Activation
+        [HarmonyPatch(typeof(ShopController), "Start")]
+        public static class ShopControllerStart_Patch
+        {
+            public static void Postfix()
+            {
+                CursedUI.overrideWaitingButtonObj.SetActive(false);
+                CursedUI.ToggleOverlay(false);
+                CursedUI.waitingTextObj.SetActive(false);
+                CursedUI.showLobbyButtonObj.SetActive(true);
+            }
+        }
+        [HarmonyPatch(typeof(EncounterController), "Start")]
+        public static class EncounterControllerStart_Patch
+        {
+            public static void Postfix()
+            {
+                CursedUI.ToggleOverlay(true);
+                CursedUI.showLobbyButtonObj.SetActive(false);
             }
         }
         #endregion
@@ -195,7 +347,6 @@ namespace CWMultiplayer
                 mostRecentScorePacket = __result;
             }
         }
-        //Get Remaining Target (SubmitWord_Patch moved into boss stuff)
         #endregion
         
         #region Other Stuff
@@ -203,12 +354,23 @@ namespace CWMultiplayer
         public override void OnUpdate()
         {
             base.OnUpdate();
+            if(CursedNetworking.myPlayerPacket.highScore.Score > 0 && ReceivedInfo.opponentHighscore.Score > 0)
+            {
+                encounterSummaryDisplayController.UpdateDisplayedTargetValue(ReceivedInfo.opponentHighscore, ReceivedInfo.opponentHighscore, false);
+            }
             if(SteamAPI.Init()) SteamAPI.RunCallbacks();
             if(CursedUI.lobbyID != CSteamID.Nil) CursedNetworking.UpdateAndSendPlayerPacket();
             if(SteamMatchmaking.GetNumLobbyMembers(CursedUI.lobbyID) > 1 && !ReceivedInfo.hasOpponent)
             {
                 ReceivedInfo.hasOpponent = true;
                 MelonLogger.Msg("2 People In Lobby!");
+            }
+            if(SteamMatchmaking.GetNumLobbyMembers(CursedUI.lobbyID) == 1 && ReceivedInfo.hasOpponent)
+            {
+                ReceivedInfo.hasOpponent = false;
+                MelonLogger.Msg("Opponent Disconnected");
+                ReceivedInfo.ResetInfo();
+                CursedNetworking.myPlayerPacket.ResetPacket();
             }
 
             //Resolution Stuff
@@ -217,12 +379,6 @@ namespace CWMultiplayer
                 resolution.x = Screen.width;
                 resolution.y = Screen.height;
                 CursedUI.SetUpUIAppearance();
-            }
-
-            //Waiting For Opponent Stuff
-            if(ReceivedInfo.hasOpponent)
-            {
-                CursedUI.waitingTextObj.SetActive(CursedNetworking.myPlayerPacket.highScore > 0 && !CursedNetworking.myPlayerPacket.inBoss);
             }
         }
         [HarmonyPatch(typeof(ResolutionConfigUtility), "UpdateDisplaySettings", new System.Type[] { typeof(Resolution) })]
@@ -240,8 +396,17 @@ namespace CWMultiplayer
         public static bool hasOpponent = false;
         public static bool opponentIsInBoss = false;
         public static int receivedScore = 0;
-        public static int opponentHighscore = 0;
-        public static int opponentHealth = 5;
+        public static ScorePacket opponentHighscore = new ScorePacket(0);
+        public static int opponentHealth = 3;
+
+        public static void ResetInfo()
+        {
+            hasOpponent = false;
+            opponentIsInBoss = false;
+            receivedScore = 0;
+            opponentHighscore = new ScorePacket(0);
+            opponentHealth = 3;
+        }
     }
     public class CursedNetworking : MonoBehaviour
     {
@@ -252,16 +417,16 @@ namespace CWMultiplayer
         {
             public string playerName;
             public bool inBoss;
-            public int highScore;
+            public ScorePacket highScore;
             public int health;
             public PlayerPacket(string name, int totHealth)
             {
                 playerName = name;
                 inBoss = false;
-                highScore = 0;
+                highScore = new ScorePacket(0);
                 health = totHealth;
             }
-            public void UpdatePacket(bool inBossFight, int hScore, int currHealth)
+            public void UpdatePacket(bool inBossFight, ScorePacket hScore, int currHealth)
             {
                 inBoss = inBossFight;
                 highScore = hScore;
@@ -270,8 +435,15 @@ namespace CWMultiplayer
             }
             public string GetAsString(char divider)
             {
-                string dataString = playerName + divider + inBoss + divider + highScore + divider + health;
+                string dataString = playerName + divider + inBoss + divider + highScore.Score + divider + health;
                 return dataString;
+            }
+            public void ResetPacket(bool fullReset = false)
+            {
+                if(fullReset) playerName = "";
+                inBoss = false;
+                highScore = new ScorePacket(0);
+                health = 0;
             }
         }
         public static PlayerPacket myPlayerPacket;
@@ -284,7 +456,7 @@ namespace CWMultiplayer
 
             MelonLogger.Msg("Steam Linked!");
 
-            myPlayerPacket = new PlayerPacket("", 5);
+            myPlayerPacket = new PlayerPacket("", 3);
 
             new CursedUI().SetUpUI();
         }
@@ -292,11 +464,11 @@ namespace CWMultiplayer
         {
             if(CursedUI.lobbyID == CSteamID.Nil || !playerDataChanged) return;
             
-            SteamMatchmaking.SetLobbyData(CursedUI.lobbyID, "PlayerPacket", myPlayerPacket.GetAsString(':'));
+            SteamMatchmaking.SetLobbyMemberData(CursedUI.lobbyID, "PlayerPacket", myPlayerPacket.GetAsString(':'));
             MelonLogger.Msg("Updated Info To: " + myPlayerPacket.GetAsString(':'));
             playerDataChanged = false;
         }
-        public static void ReceiveAndUpdateFoeInfo(LobbyDataUpdate_t callback)//HAS TESTING THING FOR SINGLE PLAYER!!!
+        public static void ReceiveAndUpdateFoeInfo(LobbyDataUpdate_t callback)
         {
             if(callback.m_bSuccess == 0)
             {
@@ -304,14 +476,31 @@ namespace CWMultiplayer
                 return;
             }
 
-            string[] lobbyDataList = SteamMatchmaking.GetLobbyData((CSteamID)callback.m_ulSteamIDLobby, "PlayerPacket").Split(':');
-
-            if(lobbyDataList.Count() == 4 && int.TryParse(lobbyDataList[2], out int highScoreInt) && int.TryParse(lobbyDataList[3], out int health))
+            string[] lobbyDataList = new string[4];
+            for(int i = 0; i < 2; i++)
             {
-                if(lobbyDataList[0] != myPlayerPacket.playerName || true)//REMOVE "|| true" !!!
+                var member = SteamMatchmaking.GetLobbyMemberByIndex((CSteamID)callback.m_ulSteamIDLobby, i);
+                string[] tempLobbyDataList = SteamMatchmaking.GetLobbyMemberData((CSteamID)callback.m_ulSteamIDLobby, member, "PlayerPacket").Split(':');
+                if(myPlayerPacket.playerName == "Player 1" && tempLobbyDataList.Contains("Player 2"))
+                {
+                    lobbyDataList = tempLobbyDataList;
+                }
+                else if(myPlayerPacket.playerName == "Player 2" && tempLobbyDataList.Contains("Player 1"))
+                {
+                    lobbyDataList = tempLobbyDataList;
+                }
+                else if(!(tempLobbyDataList.Contains("Player 1") || tempLobbyDataList.Contains("Player 2")))
+                {
+                    MelonLogger.Msg("Error In Data, Data Found: " + string.Join(" | ", tempLobbyDataList));
+                }
+            }
+
+            if(long.TryParse(lobbyDataList[2], out long highScoreLong) && int.TryParse(lobbyDataList[3], out int health))
+            {
+                if(lobbyDataList[0] != myPlayerPacket.playerName)
                 {
                     ReceivedInfo.opponentIsInBoss = lobbyDataList[1] == "True";
-                    ReceivedInfo.opponentHighscore = highScoreInt;
+                    ReceivedInfo.opponentHighscore = new ScorePacket(highScoreLong);
                     ReceivedInfo.opponentHealth = health;
                     MelonLogger.Msg("Received Info: " + string.Join(" | ", lobbyDataList));
                     if(!ReceivedInfo.hasOpponent)
@@ -322,12 +511,12 @@ namespace CWMultiplayer
                 }
                 else
                 {
-                    MelonLogger.Msg("You Updated Info");
+                    MelonLogger.Msg("You Updated Info To: " + string.Join(" | ", lobbyDataList));
                 }
             }
             else if(lobbyDataList.Count() == 4)
             {
-                MelonLogger.Msg("Failed To Update Player Packet Info - Ints Didn't Parse");
+                MelonLogger.Msg("Failed To Update Player Packet Info - Ints Didn't Parse: " + string.Join(" | ", lobbyDataList));
             }
 
             if(ReceivedInfo.opponentIsInBoss)
@@ -343,7 +532,7 @@ namespace CWMultiplayer
         private static GameObject eventSystemObj = new GameObject("EventSystem", new System.Type[] { typeof(Transform), typeof(EventSystem), typeof(InputSystemUIInputModule), typeof(CursedUI) });
         private static GameObject lobbyMenuObj = new GameObject("Lobbies Menu", new System.Type[] { typeof(RectTransform), typeof(CursedUI) });
         private static GameObject scrollViewObj = new GameObject("Scorll View", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
-        private static GameObject showLobbyButtonObj = new GameObject("Show Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public static GameObject showLobbyButtonObj = new GameObject("Show Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static GameObject hideLobbyButtonObj = new GameObject("Hide Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static GameObject hostButtonObj = new GameObject("Host Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static GameObject lobbyIDObj = new GameObject("Lobby ID", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
@@ -357,12 +546,12 @@ namespace CWMultiplayer
         private static List<GameObject> lobbyObjects = new List<GameObject> { canvasObj, eventSystemObj, showLobbyButtonObj, hideLobbyButtonObj, hostButtonObj, lobbyIDObj, lobbyButtonObj, lobbyMenuObj, backButtonObj, lobbyNameInputFieldObj, joinLobbyButtonObj, lobbyIDBackgroundObj };
         public static GameObject waitingTextObj = new GameObject("Waiting Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         
-        public static GameObject showLobbyButtonTextObj = new GameObject("Show Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        public static GameObject hideLobbyButtonTextObj = new GameObject("Hide Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        public static GameObject hostLobbyButtonTextObj = new GameObject("Host Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        public static GameObject lobbyButtonTextObj = new GameObject("Lobby Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        public static GameObject joinLobbyButtonTextObj = new GameObject("Join Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        public static GameObject backLobbyButtonTextObj = new GameObject("Back Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject showLobbyButtonTextObj = new GameObject("Show Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject hideLobbyButtonTextObj = new GameObject("Hide Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject hostLobbyButtonTextObj = new GameObject("Host Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject lobbyButtonTextObj = new GameObject("Lobby Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject joinLobbyButtonTextObj = new GameObject("Join Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        private static GameObject backLobbyButtonTextObj = new GameObject("Back Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         #endregion
         #region Steam Callbacks
         public static Callback<LobbyMatchList_t> m_lobbyMatchList;
@@ -397,6 +586,11 @@ namespace CWMultiplayer
                 lobbyButtonTextObj.transform.SetParent(lobbyButtonObj.transform);
                 joinLobbyButtonTextObj.transform.SetParent(joinLobbyButtonObj.transform);
                 backLobbyButtonTextObj.transform.SetParent(backButtonObj.transform);
+                //In-Game UI
+                myHeartsObj.transform.SetParent(canvasObj.transform);
+                foeHeartsObj.transform.SetParent(canvasObj.transform);
+                overrideWaitingButtonObj.transform.SetParent(canvasObj.transform);
+                overrideWaitingButtonTextObj.transform.SetParent(overrideWaitingButtonObj.transform);
 
             //Iteration Through All
             foreach(var thisObject in lobbyObjects)
@@ -522,6 +716,15 @@ namespace CWMultiplayer
                 backLobbyButtonText.fontSize = 50;
                 backLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
+            
+            TextMeshProUGUI overrideWaitingButtonText = overrideWaitingButtonTextObj.GetComponent<TextMeshProUGUI>();
+            if(overrideWaitingButtonText != null)
+            {
+                overrideWaitingButtonText.text = "Override";
+                overrideWaitingButtonText.color = Color.black;
+                overrideWaitingButtonText.fontSize = 14;
+                overrideWaitingButtonText.alignment = TextAlignmentOptions.Center;
+            }
             #endregion
             #region Buttons Appearance
             RectTransform showLobbyButtonRect = showLobbyButtonObj.GetComponent<RectTransform>();
@@ -613,6 +816,18 @@ namespace CWMultiplayer
                     joinButtonText.color = new UnityEngine.Color(1, 1, 1, 1);
                     joinButtonText.alignment = TextAlignmentOptions.Center;
                 }
+            RectTransform overrideWaitingButtonRect = overrideWaitingButtonObj.GetComponent<RectTransform>();
+            if(overrideWaitingButtonRect != null)
+            {
+                overrideWaitingButtonRect.localPosition = new Vector3(Screen.width * 7 / 16, Screen.height * 7 / 16, 0);
+                overrideWaitingButtonRect.sizeDelta = new Vector2(100, 25);
+            }
+                RectTransform overrideWaitingButtonTextRect = overrideWaitingButtonTextObj.GetComponent<RectTransform>();
+                if(overrideWaitingButtonTextRect != null)
+                {
+                    overrideWaitingButtonTextRect.localPosition = Vector3.zero;
+                    overrideWaitingButtonTextRect.sizeDelta = overrideWaitingButtonRect.sizeDelta;
+                }
             #endregion
             #region Other Appearance Stuff
             RectTransform scrollViewRect = scrollViewObj.GetComponent<RectTransform>();
@@ -678,6 +893,22 @@ namespace CWMultiplayer
                 inputField.selectionColor = new UnityEngine.Color(0.65f, 0.8f, 1, 0.75f);
             }
             #endregion
+            #region In-Game UI
+            RectTransform myHeartsRect = myHeartsObj.GetComponent<RectTransform>();
+            if(myHeartsRect != null)
+            {
+                myHeartsRect.localPosition = new Vector3(7.5f * Screen.width / 19, Screen.height / 2 - 51, 0);
+                myHeartsRect.sizeDelta = new Vector2(200, 50);
+            }
+            RectTransform foeHeartsRect = foeHeartsObj.GetComponent<RectTransform>();
+            if(foeHeartsRect != null)
+            {
+                foeHeartsRect.localPosition = new Vector3(-7.5f * Screen.width / 19, Screen.height / 2 - 51, 0);
+                foeHeartsRect.sizeDelta = new Vector2(200, 50);
+            }
+            UpdateHearts(0, 0);
+            overrideWaitingButtonObj.SetActive(false);
+            #endregion
         }
         public void SetUpUI() //Called Once On Game Start
         {
@@ -714,6 +945,11 @@ namespace CWMultiplayer
             {
                 joinLobbyButton.onClick.AddListener(TryJoinLobby);
             }
+            Button overrideWaitingTextButton = overrideWaitingButtonObj.GetComponent<Button>();
+            if(overrideWaitingTextButton != null)
+            {
+                overrideWaitingTextButton.onClick.AddListener(OverrideWaiting);
+            }
             #endregion
             
             #region Steam Callbacks
@@ -722,6 +958,8 @@ namespace CWMultiplayer
             m_updateData = Callback<LobbyDataUpdate_t>.Create(CursedNetworking.ReceiveAndUpdateFoeInfo);
             m_lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
             #endregion
+        
+            ToggleOverlay(true);
         }
 
         #region Button Callbacks
@@ -758,13 +996,12 @@ namespace CWMultiplayer
                 thisObject.SetActive(new List<GameObject>{ canvasObj, eventSystemObj, showLobbyButtonObj }.Contains(thisObject));
                 canvasObj.GetComponent<UnityEngine.UI.Image>().enabled = false;
             }
+            waitingTextObj.SetActive(false);
         }
         public static void BackButtonPressed()
         {
-            ReceivedInfo.hasOpponent = false;
-            ReceivedInfo.opponentHealth = 5;
-            ReceivedInfo.opponentHighscore = 0;
-            ReceivedInfo.opponentIsInBoss = false;
+            ReceivedInfo.ResetInfo();
+            CursedNetworking.myPlayerPacket.ResetPacket();
             foreach(var thisObject in lobbyObjects)
             {
                 thisObject.SetActive(!new List<GameObject> { backButtonObj, showLobbyButtonObj, lobbyNameInputFieldObj, lobbyIDBackgroundObj }.Contains(thisObject));
@@ -816,11 +1053,19 @@ namespace CWMultiplayer
             
             SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 100);
 
-            if(CursedNetworking.myPlayerPacket.playerName == "" || CursedNetworking.myPlayerPacket.playerName == null)
-            {
-                CursedNetworking.myPlayerPacket.playerName = "Player 1";
-            }
+            CursedNetworking.myPlayerPacket.playerName = "Player 1";
+            
             CursedNetworking.isHost = true;
+        }
+        public static void OverrideWaiting()
+        {
+            if(!ReceivedInfo.hasOpponent) return;
+
+            ReceivedInfo.opponentHighscore = new ScorePacket(1);
+            overrideWaitingButtonObj.SetActive(false);
+
+            ReceivedInfo.opponentHealth = 3;
+            CursedNetworking.myPlayerPacket.health = 3;
         }
         #endregion
 
@@ -862,11 +1107,8 @@ namespace CWMultiplayer
             if(CursedNetworking.isHost) return;
             MelonLogger.Msg("Joined Lobby");
 
-            if(CursedNetworking.myPlayerPacket.playerName == "" || CursedNetworking.myPlayerPacket.playerName == null)
-            {
-                CursedNetworking.myPlayerPacket.playerName = "Player 2";
-                MelonLogger.Msg("You Are Player 2");
-            }
+            CursedNetworking.myPlayerPacket.playerName = "Player 2";
+            MelonLogger.Msg("You Are Player 2");
 
             if(callback.m_EChatRoomEnterResponse != 1)
             {
@@ -901,17 +1143,154 @@ namespace CWMultiplayer
         #endregion
     
         #region In-Game UI Stuff
-        private static GameObject myHeartsObj = new GameObject("Hearts", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
-        private static GameObject foeHeartsObj = new GameObject("Hearts", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
+        public static GameObject myHeartsObj = new GameObject("My Hearts", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
+        public static GameObject foeHeartsObj = new GameObject("Foe Hearts", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
+        public static GameObject overrideWaitingButtonObj = new GameObject("Override Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(CursedUI) });
+        private static GameObject overrideWaitingButtonTextObj = new GameObject("Override Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         private static List<GameObject> UIObjects = new List<GameObject> { myHeartsObj, foeHeartsObj };
 
         public static void ToggleOverlay(bool turnOn)
         {
             foreach(GameObject thisObject in UIObjects)
             {
+                thisObject.SetActive(turnOn);
+            }
+        }
+        public static void UpdateHearts(int myHearts, int foeHearts)
+        {
+            try
+            {
+                switch(myHearts)
+                {
+                    case 0:
+                        myHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.noHeartsSprite;
+                        break;
+                    case 1:
+                        myHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.oneHeartSprite;
+                        break;
+                    case 2:
+                        myHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.twoHeartsSprite;
+                        break;
+                    case 3:
+                        myHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.threeHeartsSprite;
+                        break;
+                    default:
+                        MelonLogger.Msg("Error: Invalid Number Of Hearts for Me");
+                        return;
+                }
+                switch(foeHearts)
+                {
+                    case 0:
+                        foeHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.noHeartsSprite;
+                        break;
+                    case 1:
+                        foeHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.oneHeartSprite;
+                        break;
+                    case 2:
+                        foeHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.twoHeartsSprite;
+                        break;
+                    case 3:
+                        foeHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.threeHeartsSprite;
+                        break;
+                    default:
+                        MelonLogger.Msg("Error: Invalid Number Of Hearts for Foe");
+                        return;
+                }
 
+                if(myHeartsObj.GetComponent<Image>().sprite == null)
+                {
+                    myHeartsObj.GetComponent<Image>().color = new UnityEngine.Color((float)CursedNetworking.myPlayerPacket.health / 3f, 0, 0);
+                }
+                if(foeHeartsObj.GetComponent<Image>().sprite == null)
+                {
+                    foeHeartsObj.GetComponent<Image>().color = new UnityEngine.Color((float)ReceivedInfo.opponentHealth / 3f, 0, 0);
+                }
+            }
+            catch (System.Exception e)
+            {
+                MelonLogger.Msg(e);
             }
         }
         #endregion
+    }
+    public class TextureLoaderMod : MelonMod
+    {
+        public static Sprite noHeartsSprite;
+        public static Sprite oneHeartSprite;
+        public static Sprite twoHeartsSprite;
+        public static Sprite threeHeartsSprite;
+        public static void TextureLoadInit()
+        {
+            try
+            {
+                string dllFolder = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                if(string.IsNullOrEmpty(dllFolder))
+                {
+                    MelonLogger.Msg("TextureLoaderMod: Unable to resolve DLL folder.");
+                    return;
+                }
+
+                noHeartsSprite = LoadSpriteFromFolder("noHearts", dllFolder);
+                oneHeartSprite = LoadSpriteFromFolder("oneHeart", dllFolder);
+                twoHeartsSprite = LoadSpriteFromFolder("twoHearts", dllFolder);
+                threeHeartsSprite = LoadSpriteFromFolder("threeHearts", dllFolder);
+            }
+            catch(System.Exception e)
+            {
+                MelonLogger.Msg("TextureLoaderMod: " + e);
+            }
+        }
+
+        public static Sprite LoadSpriteFromFolder(string baseName, string folder)
+        {
+            string[] extensions = new[] { ".png", ".jpg", ".jpeg" };
+            foreach(string ext in extensions)
+            {
+                string path = Path.Combine(folder, baseName + ext);
+                if(File.Exists(path))
+                    return LoadSpriteFromFile(path);
+            }
+
+            string fallback = Directory.EnumerateFiles(folder)
+                .FirstOrDefault(file => Path.GetFileNameWithoutExtension(file).Equals(baseName, System.StringComparison.OrdinalIgnoreCase));
+            if(!string.IsNullOrEmpty(fallback))
+                return LoadSpriteFromFile(fallback);
+
+            return null;
+        }
+
+        private static Sprite LoadSpriteFromFile(string filePath)
+        {
+            try
+            {
+                byte[] imageData = File.ReadAllBytes(filePath);
+                Texture2D texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+
+                var loadMethod = typeof(Texture2D).GetMethod("LoadImage", new[] { typeof(byte[]) });
+                if(loadMethod == null)
+                {
+                    MelonLogger.Msg("TextureLoaderMod: Texture2D.LoadImage is unavailable.");
+                    return null;
+                }
+
+                bool loaded = (bool)loadMethod.Invoke(texture, new object[] { imageData });
+                if(!loaded)
+                {
+                    MelonLogger.Msg("TextureLoaderMod: Failed to load image bytes for " + filePath);
+                    return null;
+                }
+
+                texture.wrapMode = TextureWrapMode.Clamp;
+                texture.filterMode = FilterMode.Bilinear;
+                Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+                sprite.name = Path.GetFileNameWithoutExtension(filePath);
+                return sprite;
+            }
+            catch (System.Exception e)
+            {
+                MelonLogger.Msg("Error Loading Sprite From File: " + filePath + " -> " + e);
+                return null;
+            }
+        }
     }
 }
