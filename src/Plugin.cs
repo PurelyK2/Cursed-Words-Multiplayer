@@ -23,10 +23,9 @@ using System.IO;
 /// 13. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
 /// 16. Make Fairies AND Diving Mask Ungettable
 /// 17. Add items to affect opponents
-/// 18. Make toggle-able real time or grid-based updates for visual score during boss rounds (in update)
+/// 18. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
 
 /// 11. Increase Boss Payout To if you won on first grid
-/// 15. Handle BIG NUMBERS!!! (parse as L instead of int)
 namespace CWMultiplayer
 {
     public class MultiplayerManager : MelonMod
@@ -60,22 +59,13 @@ namespace CWMultiplayer
         #endregion
 
         #region Bosses Stuff
-        //Hyena Override
-        [HarmonyPatch(typeof(EncounterController), "WaitForWordSubmission")]
-        public static class HyenaForcedSell_Patch
-        {
-            public static void Prefix(ref bool ____awaitingForcedSell)
-            {
-                if(ReceivedInfo.hasOpponent) ____awaitingForcedSell = false;
-            }
-        }
-        //Badger Override
-        [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
         public static class BadgerFewerGrids_Patch
         {
             public static void Postfix(ref bool __result)
             {
-                if(__result && ReceivedInfo.hasOpponent)
+                if(!ReceivedInfo.hasOpponent) return;
+
+                if(__result)
                     MelonLogger.Msg("Removing Boss Modifier");
                 __result = false;
             }
@@ -216,7 +206,6 @@ namespace CWMultiplayer
                 {
                     MelonLogger.Msg(e);
                 }
-                MelonLogger.Msg("Finished Stuff");
                 CursedUI.overrideWaitingButtonObj.SetActive(false);
                 CursedUI.waitingTextObj.SetActive(false);
                 CursedUI.ToggleOverlay(false);
@@ -293,23 +282,120 @@ namespace CWMultiplayer
                 CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
             }
         }
-        //Boss Draft Stuff
-        [HarmonyPatch(typeof(BossDraftController), "Start")]
-        public static class BossDraft_Patch
-        {
-            public static void Postfix(ref bool ____isBossSelected, ref BossDraftController __instance, ref BossDraftVisualController ____visualController)
-            {
-                if(!ReceivedInfo.hasOpponent) return;
+        #endregion
 
+        #region Sprite Overrides (NO RECEIVEDINFO CHECKS!!!)
+        [HarmonyPatch(typeof(CharacterSelectController), "TransitionToNextScene")]
+        public static class GetActiveCharacter_Patch
+        {
+            public static void Prefix(ref Character ____activeCharacter)
+            {
                 try
                 {
-                    ____visualController.Select(true);
-                    __instance.BossSelectButtonCallback();
+                    CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
+                    CursedNetworking.playerDataChanged = true;
+                    CursedNetworking.UpdateAndSendPlayerPacket();
                 }
                 catch (System.Exception e)
                 {
                     MelonLogger.Msg(e);
                 }
+            }
+        }
+        //Boss Draft Stuff
+        [HarmonyPatch(typeof(RunProgress), "GetCurrentBossDraft")]
+        public static class BossDraft_Patch
+        {
+            public static void Postfix(ref BossDraft __result)
+            {
+                if(ReceivedInfo.foeCharacter == null) return;
+
+
+                __result = new BossDraft();
+                BossModifier bossModifier = new RandomiseItemOrder();
+
+                switch(ReceivedInfo.foeCharacter.GetName())
+                {
+                    case "Rodman":
+                    case "Nina Nix":
+                    case "Hayley Bayles":
+                    case "Sam Gambit":
+                    case "Bones The Dog":
+                    case "Octacles":
+                        MelonLogger.Msg("Option Is A Character Without A Custom Boss");
+                        break;
+                    case "Sandy Saguaro":
+                        bossModifier = new SandySaguaroBoss();
+                        break;
+                    case "Cretaceous Meg":
+                        bossModifier = new SandySaguaroBoss();
+                        break;
+                    case "Human Boy":
+                        bossModifier = new HumanBoyBoss();
+                        break;
+                    case "Beans":
+                        bossModifier = new PrismaticBeanBoss();
+                        break;
+                    default:
+                        MelonLogger.Msg("Option Is An Invalid Character");
+                        break;
+                }
+
+                __result.AvailableBosses.Add(bossModifier);
+                __result.AvailableBosses.Add(bossModifier);
+            }
+        }
+        [HarmonyPatch(typeof(BossDraftController), "ShowSecretBossIntroDialogue")]
+        public static class SecretBossDialogue_Patch
+        {
+            public static bool Prefix()
+            {
+                return false;
+            }
+        }
+        [HarmonyPatch(typeof(RunProgress), "GetCurrentBossDraft")]
+        public static class BossVisuals_Patch
+        {
+            public static void Postfix(ref BossDraft __result)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
+
+                BossDraft fakedDraft = new BossDraft();
+
+                BossModifier bossModifier = null;
+
+                switch(ReceivedInfo.foeCharacter.GetName())
+                {
+                    case "Sandy Saguaro":
+                        bossModifier = new SandySaguaroBoss();
+                        break;
+                    case "Cretaceous Meg":
+                        bossModifier = new CretaceousMegBoss();
+                        break;
+                    case "Human Boy":
+                        bossModifier = new HumanBoyBoss();
+                        break;
+                    case "Beans":
+                        bossModifier = new PrismaticBeanBoss();
+                        break;
+                    default:
+                        bossModifier = new PrismaticBeanBoss();
+                        MelonLogger.Msg("Error: Foe Isn't A Boss, Defaulting To Beans");
+                        break;
+                }
+                fakedDraft.AvailableBosses.Add(bossModifier);
+                fakedDraft.AvailableBosses.Add(bossModifier);
+                __result = fakedDraft;
+                MelonLogger.Msg("Changed Bosses");
+            }
+        }
+        //Skip Dialogue
+        [HarmonyPatch(typeof(BossDraftController), "ShowSecretBossIntroDialogue")]
+        public static class StopDialogue_Patch
+        {
+            public static bool Prefix()
+            {
+                return !ReceivedInfo.hasOpponent;
             }
         }
         #endregion
@@ -331,8 +417,8 @@ namespace CWMultiplayer
         {
             public static void Postfix()
             {
-                CursedUI.ToggleOverlay(true);
                 CursedUI.showLobbyButtonObj.SetActive(false);
+                CursedUI.ToggleOverlay(ReceivedInfo.hasOpponent);
             }
         }
         #endregion
@@ -393,19 +479,33 @@ namespace CWMultiplayer
     }
     public static class ReceivedInfo
     {
-        public static bool hasOpponent = false;
+        public static bool hasOpponent = true;
         public static bool opponentIsInBoss = false;
-        public static int receivedScore = 0;
-        public static ScorePacket opponentHighscore = new ScorePacket(0);
+        public static ScorePacket opponentHighscore = new ScorePacket(1);
         public static int opponentHealth = 3;
+        public static Character foeCharacter = new SockHead();
 
         public static void ResetInfo()
         {
             hasOpponent = false;
             opponentIsInBoss = false;
-            receivedScore = 0;
             opponentHighscore = new ScorePacket(0);
             opponentHealth = 3;
+            foeCharacter = null;
+        }
+        public static void SetFoeCharacter(string characterName)
+        {
+            List<System.Type> characterTypes = Character.GetAllCharacters();
+            foreach (var charType in characterTypes)
+            {
+                Character thisCharacter = (Character)System.Activator.CreateInstance(charType);
+                if(thisCharacter.GetName() == characterName)
+                {
+                    foeCharacter = thisCharacter;
+                    return;
+                }
+            }
+            MelonLogger.Msg("Error: Couldn't Find Character");
         }
     }
     public class CursedNetworking : MonoBehaviour
@@ -419,12 +519,14 @@ namespace CWMultiplayer
             public bool inBoss;
             public ScorePacket highScore;
             public int health;
+            public string myCharacterName;
             public PlayerPacket(string name, int totHealth)
             {
                 playerName = name;
                 inBoss = false;
                 highScore = new ScorePacket(0);
                 health = totHealth;
+                myCharacterName = "";
             }
             public void UpdatePacket(bool inBossFight, ScorePacket hScore, int currHealth)
             {
@@ -435,7 +537,8 @@ namespace CWMultiplayer
             }
             public string GetAsString(char divider)
             {
-                string dataString = playerName + divider + inBoss + divider + highScore.Score + divider + health;
+                string charName = myCharacterName != "" ? ":" + myCharacterName : "";
+                string dataString = playerName + divider + inBoss + divider + highScore.Score + divider + health + charName;
                 return dataString;
             }
             public void ResetPacket(bool fullReset = false)
@@ -476,7 +579,7 @@ namespace CWMultiplayer
                 return;
             }
 
-            string[] lobbyDataList = new string[4];
+            string[] lobbyDataList = new string[5];
             for(int i = 0; i < 2; i++)
             {
                 var member = SteamMatchmaking.GetLobbyMemberByIndex((CSteamID)callback.m_ulSteamIDLobby, i);
@@ -507,6 +610,10 @@ namespace CWMultiplayer
                     {
                         ReceivedInfo.hasOpponent = true;
                         MelonLogger.Msg("You Now Have An Opponent!");
+                    }
+                    if(!string.IsNullOrEmpty(lobbyDataList[4]))
+                    {
+                        ReceivedInfo.SetFoeCharacter(lobbyDataList[4]);
                     }
                 }
                 else
