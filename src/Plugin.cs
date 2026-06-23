@@ -10,6 +10,8 @@ using System.Linq;
 using UnityEngine.InputSystem.UI;
 using System.Threading.Tasks;
 using System.IO;
+using nickeltin.SDF.Runtime;
+using System.Net.NetworkInformation;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -24,6 +26,7 @@ using System.IO;
 /// 16. Make Fairies AND Diving Mask Ungettable
 /// 17. Add items to affect opponents
 /// 18. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 19. Give Boss Effects For All Characters!
 
 /// 11. Increase Boss Payout To if you won on first grid
 namespace CWMultiplayer
@@ -59,19 +62,17 @@ namespace CWMultiplayer
         #endregion
 
         #region Bosses Stuff
-        public static class BadgerFewerGrids_Patch
+        [HarmonyPatch(typeof(BossDraftController), "Start")]
+        public static class AutoChooseBoss_Patch
         {
-            public static void Postfix(ref bool __result)
+            public static void Postfix(ref BossDraftController __instance, ref BossDraftVisualController ____visualController)
             {
-                if(!ReceivedInfo.hasOpponent) return;
-
-                if(__result)
-                    MelonLogger.Msg("Removing Boss Modifier");
-                __result = false;
+                ____visualController.Select(true);
+                __instance.BossSelectButtonCallback();
             }
         }
         [HarmonyPatch(typeof(EncounterController), "GenerateGrid", new System.Type[] {typeof(bool)})]
-        public static class ApplyBossModifier_Patch //inBoss, boss modifiers, total target = 1
+        public static class ApplyBossModifier_Patch //inBoss, total target = 1
         {
             public static void Prefix(ref List<BossModifier> ____bossModifiers)
             {
@@ -82,8 +83,10 @@ namespace CWMultiplayer
                     {
                         CursedNetworking.myPlayerPacket.UpdatePacket(true, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
                     }
-                    
-                    ____bossModifiers = new List<BossModifier>();
+                    else
+                    {
+                        CursedNetworking.myPlayerPacket.inBoss = false;
+                    }
 
                     if(CursedNetworking.myPlayerPacket.inBoss && ReceivedInfo.hasOpponent)
                     {
@@ -101,7 +104,7 @@ namespace CWMultiplayer
             }
         }
         [HarmonyPatch(typeof(EncounterController), "Start")]
-        public static class Encounter_Start_Patch //inBoss, boss modifiers, total target = 1
+        public static class Encounter_Start_Patch //inBoss, total target = 1, BossModifierFloorAdjusting
         {
             public static void Prefix(ref List<BossModifier> ____bossModifiers, ref EncounterController __instance, ref EncounterSummaryDisplayController ____encounterSummaryDisplayController)
             {
@@ -117,8 +120,7 @@ namespace CWMultiplayer
                 {
                     CursedNetworking.myPlayerPacket.inBoss = true;
                 }
-                if(!CursedNetworking.myPlayerPacket.inBoss) CursedNetworking.myPlayerPacket.highScore = new ScorePacket(0);
-                if(ReceivedInfo.hasOpponent) ____bossModifiers = new List<BossModifier>();
+                else CursedNetworking.myPlayerPacket.highScore = new ScorePacket(0);
 
                 if(CursedNetworking.myPlayerPacket.inBoss && ReceivedInfo.hasOpponent)
                 {
@@ -272,8 +274,6 @@ namespace CWMultiplayer
                 {
                     MelonLogger.Msg(e);
                 }
-                if(!(CursedNetworking.myPlayerPacket.highScore.Score > 0 && !CursedNetworking.myPlayerPacket.inBoss))
-                    CursedUI.ToggleOverlay(false);
             }
             private static async Task AsyncReset()
             {
@@ -284,17 +284,21 @@ namespace CWMultiplayer
         }
         #endregion
 
-        #region Sprite Overrides (NO RECEIVEDINFO CHECKS!!!)
+        #region Sprite Overrides
         [HarmonyPatch(typeof(CharacterSelectController), "TransitionToNextScene")]
         public static class GetActiveCharacter_Patch
         {
             public static void Prefix(ref Character ____activeCharacter)
             {
+                if(!ReceivedInfo.hasOpponent) return;
+
                 try
                 {
                     CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
+                    CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
                     CursedNetworking.playerDataChanged = true;
                     CursedNetworking.UpdateAndSendPlayerPacket();
+                    MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
                 }
                 catch (System.Exception e)
                 {
@@ -308,85 +312,47 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref BossDraft __result)
             {
-                if(ReceivedInfo.foeCharacter == null) return;
-
-
-                __result = new BossDraft();
-                BossModifier bossModifier = new RandomiseItemOrder();
-
-                switch(ReceivedInfo.foeCharacter.GetName())
-                {
-                    case "Rodman":
-                    case "Nina Nix":
-                    case "Hayley Bayles":
-                    case "Sam Gambit":
-                    case "Bones The Dog":
-                    case "Octacles":
-                        MelonLogger.Msg("Option Is A Character Without A Custom Boss");
-                        break;
-                    case "Sandy Saguaro":
-                        bossModifier = new SandySaguaroBoss();
-                        break;
-                    case "Cretaceous Meg":
-                        bossModifier = new SandySaguaroBoss();
-                        break;
-                    case "Human Boy":
-                        bossModifier = new HumanBoyBoss();
-                        break;
-                    case "Beans":
-                        bossModifier = new PrismaticBeanBoss();
-                        break;
-                    default:
-                        MelonLogger.Msg("Option Is An Invalid Character");
-                        break;
-                }
-
-                __result.AvailableBosses.Add(bossModifier);
-                __result.AvailableBosses.Add(bossModifier);
-            }
-        }
-        [HarmonyPatch(typeof(BossDraftController), "ShowSecretBossIntroDialogue")]
-        public static class SecretBossDialogue_Patch
-        {
-            public static bool Prefix()
-            {
-                return false;
-            }
-        }
-        [HarmonyPatch(typeof(RunProgress), "GetCurrentBossDraft")]
-        public static class BossVisuals_Patch
-        {
-            public static void Postfix(ref BossDraft __result)
-            {
                 if(!ReceivedInfo.hasOpponent) return;
-
-                BossDraft fakedDraft = new BossDraft();
-
-                BossModifier bossModifier = null;
-
-                switch(ReceivedInfo.foeCharacter.GetName())
+                try
                 {
-                    case "Sandy Saguaro":
-                        bossModifier = new SandySaguaroBoss();
-                        break;
-                    case "Cretaceous Meg":
-                        bossModifier = new CretaceousMegBoss();
-                        break;
-                    case "Human Boy":
-                        bossModifier = new HumanBoyBoss();
-                        break;
-                    case "Beans":
-                        bossModifier = new PrismaticBeanBoss();
-                        break;
-                    default:
-                        bossModifier = new PrismaticBeanBoss();
-                        MelonLogger.Msg("Error: Foe Isn't A Boss, Defaulting To Beans");
-                        break;
+                    __result.AvailableBosses.RemoveAll(t => true);
+
+                    BossModifier bossModifier = new RandomiseItemOrder();
+                    if(ReceivedInfo.foeCharacter != null)
+                    {   
+                        System.Type foeCharacterType = ReceivedInfo.foeCharacter.GetType();
+
+                        if(foeCharacterType == typeof(WetDennis))
+                            bossModifier = new RodmanBoss();
+                        else if(foeCharacterType == typeof(NinaNix))
+                            bossModifier = new NinaNixBoss();
+                        else if(foeCharacterType == typeof(HayleyBayles))
+                            bossModifier = new HayleyBaylesBoss();
+                        else if(foeCharacterType == typeof(SamGambit))
+                            bossModifier = new SamGambitBoss();
+                        else if(foeCharacterType == typeof(BonesTheDog))
+                            bossModifier = new BonesBoss();
+                        else if(foeCharacterType == typeof(Octacles))
+                            bossModifier = new OctaclesBoss();
+                        else if(foeCharacterType == typeof(SandySaguaro))
+                            bossModifier = new SandySaguaroBoss();
+                        else if(foeCharacterType == typeof(Spike))
+                            bossModifier = new CretaceousMegBoss();
+                        else if(foeCharacterType == typeof(SockHead))
+                            bossModifier = new HumanBoyBoss();
+                        else if(foeCharacterType == typeof(PrismaticBean))
+                            bossModifier = new PrismaticBeanBoss();
+                        else MelonLogger.Msg("Option Is An Invalid Character");
+                    }
+
+                    bossModifier.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
+                    __result.AvailableBosses.Add(bossModifier);
+                    __result.AvailableBosses.Add(bossModifier);
                 }
-                fakedDraft.AvailableBosses.Add(bossModifier);
-                fakedDraft.AvailableBosses.Add(bossModifier);
-                __result = fakedDraft;
-                MelonLogger.Msg("Changed Bosses");
+                catch (System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
             }
         }
         //Skip Dialogue
@@ -396,6 +362,52 @@ namespace CWMultiplayer
             public static bool Prefix()
             {
                 return !ReceivedInfo.hasOpponent;
+            }
+        }
+        [HarmonyPatch(typeof(HumanBoyBoss), "GetSecretBossDefeatDialogue")]
+        public static class PutASockInIt_Patch
+        {
+            public static void Postfix(ref List<DiscussionPacket> __result, ref HumanBoyBoss __instance)
+            {
+                __result = new List<DiscussionPacket>();
+                if (__instance.StolenItem != null)
+                {
+                    Debug.Log("returning item to player" + __instance.StolenItem.Name);
+                    GameStatics.GetPlayer().AddItemToInventory(__instance.StolenItem);
+                    CharacterInfoPanel.SingletonInventoryVisualController.PopulateAll();
+                    CharacterInfoPanel.SingletonInventoryVisualController.RefreshInspect();
+                }
+            }
+        }
+        //Stop Meg Shop
+        [HarmonyPatch(typeof(RunProgress), "GoToNextNodeAndGetSceneName")]
+        public static class DenyShoppingTrip_Patch
+        {
+            public static void Postfix(ref RunProgress __instance, ref string __result)
+            {
+                if(__instance.CurrentNodeType == NodeType.MegShop && ReceivedInfo.hasOpponent)
+                {
+                    __instance.CurrentNodeType = NodeType.Boss;
+                    __result = SceneNames.EncounterSceneName;
+                    (GameStatics.GetPlayer().ActiveBossModifiers.First((BossModifier boss) => boss is CretaceousMegBoss) as CretaceousMegBoss).RestorePlayerInventory();
+                }
+            }
+        }
+        //Flip Sprite
+        [HarmonyPatch(typeof(EnemyVisualController), "PopulateEnemyAnimator")]
+        public static class NopeTheOtherWay_Patch
+        {
+            public static void Postfix(ref Animator ____portraitAnimator)
+            {
+                if(ReceivedInfo.foeCharacter != null && new List<System.Type> { typeof(WetDennis), typeof(NinaNix), typeof(HayleyBayles), typeof(SamGambit), typeof(BonesTheDog), typeof(Octacles) }.Contains(ReceivedInfo.foeCharacter.GetType()))
+                {
+                    ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = new Vector3(-1f, 1f, 1f);
+
+                    Vector3 PAPos = ____portraitAnimator.gameObject.GetComponent<RectTransform>().localPosition;
+                    ____portraitAnimator.gameObject.GetComponent<RectTransform>().localPosition = new Vector3(PAPos.x - 50f, PAPos.y, PAPos.z);
+                }
+                else
+                    ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = Vector3.one;
             }
         }
         #endregion
@@ -476,6 +488,100 @@ namespace CWMultiplayer
             }
         }
         #endregion
+
+        #region Boss Effects
+        //Grid
+        [HarmonyPatch(typeof(GridUtilitySingleton), "MakeStartOfGridBossAdjustments", new System.Type[] { typeof(GridData), typeof(List<BossModifier>), typeof(ChallengeRun), typeof(List<BoardGenVizInfo>), typeof(int), typeof(bool), typeof(bool)})]
+        public static class CustomBossModifiers_Patch
+        {
+            public static void Prefix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps, ref GridUtilitySingleton __instance)
+            {
+                //Rodman
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(RodmanBoss)))
+                {
+                    MelonLogger.Msg("Fighting Rodman");
+                    List<Tile> list = new List<Tile>();
+                    foreach (Tile tile in gridData.GetAvailableTiles())
+                    {
+                        tile.SetTileType(new TileType[] { TileType.Red, TileType.Blue, TileType.Normal }[Random.Range(0,3)]);
+                        list.Add(tile);
+                    }
+                    if (list.Count > 0)
+                    {
+                        BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(ExtraQs), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
+                        vizSteps.Add(item);
+                    }
+                }
+
+                //Hayley Bayles (Literally Just AddNumbers)
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(HayleyBaylesBoss)))
+                {
+                    MelonLogger.Msg("Fighting Hayley");
+                }
+
+                //Sam Gambit (Like Sicilian Defense)
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SamGambitBoss)))
+                {
+                    ChessPiece[] chessPieces = new ChessPiece[] { ChessPiece.Knight, ChessPiece.Bishop, ChessPiece.Rook, ChessPiece.Queen, ChessPiece.King};
+                    SamGambitBoss.chessPiece = chessPieces[Random.Range(0, chessPieces.Length)];
+                }
+
+                //Bones The Dog
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(BonesBoss)))
+                {
+                }
+
+                //Octacles
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(Octacles)))
+                {
+                }
+
+                //Nat-H4
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(NatBoss)))
+                {
+                }
+            }
+        }
+        //Score
+        [HarmonyPatch(typeof(ScoreCalculation), "ApplyBossModifier", new System.Type[] { typeof(List<TileSelection>), typeof(List<ScoreCalcVizInfo>), typeof(BossModifier) })]
+        public static class BossScoreModifiers_Patch
+        {
+            public static void Postfix(ref ScoreCalcVizInfo __result, ref BossModifier bossModifier, ref List<TileSelection> tiles)
+            {
+                if(bossModifier is NinaNixBoss)
+                {
+                    MelonLogger.Msg("Vs Nina");
+                    float num = 1f;
+                    List<Tile> theseTiles = tiles.Select(tileSelection => tileSelection.SelectedTile).ToList();
+                    foreach (Tile tile in theseTiles)
+                    {
+                        num *= -0.95f;
+                    }
+                    __result.WordBonus = new WordBonusToken((long)Mathf.RoundToInt(num * 100f), true, false);
+                    __result.LettersInWordToPulse.AddRange(theseTiles);
+                }
+            }
+        }
+        //Sam Gambit's Gambit
+        [HarmonyPatch(typeof(GridUtilitySingleton), "GetValidNextTiles", new System.Type[] { typeof(GridData), typeof(List<Tile>), typeof(TileSelectionManager), typeof(bool) })]
+        public static class TheGambit_Patch
+        {
+            public static void Postfix(ref GridUtilitySingleton __instance, ref List<TileSelection> __result, ref bool noInventory, ref GridData gridData, ref TileSelectionManager tileSelectionManager, ref List<Tile> currentTiles)
+            {
+                if(!ReceivedInfo.hasOpponent || !encounterController.GetBossModifiers().Select(t => t.GetType()).Contains(typeof(SamGambitBoss))) return;
+
+                List<TileSelection> validTiles = __result;
+
+                //Normal Piece Change
+                if(currentTiles[currentTiles.Count - 1].MyGlyphType != GlyphType.Chess)
+                {
+                    //Remove adjacent tiles (RemoveAll?)
+                    //Add tiles for chess moves (GetValidChessMoves?)
+                    //Remove Duplicates (MakeUnique?)
+                }
+            }
+        }
+        #endregion
     }
     public static class ReceivedInfo
     {
@@ -483,7 +589,7 @@ namespace CWMultiplayer
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(1);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new SockHead();
+        public static Character foeCharacter = new SamGambit();
 
         public static void ResetInfo()
         {
@@ -615,6 +721,10 @@ namespace CWMultiplayer
                     {
                         ReceivedInfo.SetFoeCharacter(lobbyDataList[4]);
                     }
+                    else
+                    {
+                        ReceivedInfo.foeCharacter = new PrismaticBean();
+                    }
                 }
                 else
                 {
@@ -625,14 +735,9 @@ namespace CWMultiplayer
             {
                 MelonLogger.Msg("Failed To Update Player Packet Info - Ints Didn't Parse: " + string.Join(" | ", lobbyDataList));
             }
-
-            if(ReceivedInfo.opponentIsInBoss)
-            {
-                MelonLogger.Msg("Opponent Is In Boss");
-            }
         }
     }
-    public class CursedUI
+    public class CursedUI //MADE IT SO HEALTH BAR (TOGGLE OVERLAY) DOESN'T SHOW!!!
     {
         #region GameObjects
         public static GameObject canvasObj = new GameObject("Canvas", new System.Type[] { typeof(Canvas), typeof(RectTransform), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(CursedUI), typeof(UnityEngine.UI.Image) });
@@ -1260,7 +1365,7 @@ namespace CWMultiplayer
         {
             foreach(GameObject thisObject in UIObjects)
             {
-                thisObject.SetActive(turnOn);
+                thisObject.SetActive(false);
             }
         }
         public static void UpdateHearts(int myHearts, int foeHearts)
@@ -1400,4 +1505,274 @@ namespace CWMultiplayer
             }
         }
     }
+    
+    #region Custom Boss Modifiers For Other Character Sprites
+    public class RodmanBoss : BossModifier
+    {
+        public RodmanBoss()
+        {
+            this.Name = "Rodman";
+            this.PrefabFileName = "Rodman";
+            this.AudioPrefix = "Rodman";
+            this.SpriteFileName = new WetDennis().GetArtFileName();
+            this.UIColor = new WetDennis().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.CanBeSummonedByMichael = false;
+        }
+        public override string GetDescription()
+        {
+            return "Trichromatic: All Tiles Are Randomized To Be Red, Blue, Or Normal";
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class NinaNixBoss : BossModifier
+    {
+        public NinaNixBoss()
+        {
+            this.Name = "Nina Nix";
+            this.PrefabFileName = "NinaNix";
+            this.AudioPrefix = "NinaNix";
+            this.SpriteFileName = new NinaNix().GetArtFileName();
+            this.UIColor = new NinaNix().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.CanBeSummonedByMichael = false;
+        }
+        public override string GetDescription()
+        {
+            return "For each tile in your word get ×-0.95 WORD SCORE";
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class HayleyBaylesBoss : AddNumbers
+    {
+        public HayleyBaylesBoss()
+        {
+            this.Name = "Hayley Bayles";
+            this.PrefabFileName = "HayleyBayles";
+            this.SpriteFileName = new HayleyBayles().GetArtFileName();
+            this.UIColor = new HayleyBayles().GetUIColorA();
+            this.CanBeSummonedByMichael = false;
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class SamGambitBoss : BossModifier
+    {
+        public static ChessPiece chessPiece = ChessPiece.Pawn;
+        public SamGambitBoss()
+        {
+            this.Name = "Sam Gambit";
+            this.PrefabFileName = "SamGambit";
+            this.AudioPrefix = "Whale";
+            this.SpriteFileName = new SamGambit().GetArtFileName();
+            this.UIColor = new SamGambit().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.CanBeSummonedByMichael = false;
+        }
+        public override string GetDescription()
+        {
+            return "Gambit: Can Only Move Like The Selected Chess Piece (Currently: " + chessPiece.ToString() + ")";
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class BonesBoss : BossModifier
+    {
+        public BonesBoss()
+        {
+            this.Name = "Bones The Dog";
+            this.PrefabFileName = "BonesTheDog";
+            this.AudioPrefix = "BonesTheDog";
+            this.SpriteFileName = new BonesTheDog().GetArtFileName();
+            this.UIColor = new BonesTheDog().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.CanBeSummonedByMichael = false;
+        }
+        public override string GetDescription()
+        {
+            return "Gamba: -0 WORD SCORE. Decreased by X for each tile used in your word."; //Stacks for the whole game
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class OctaclesBoss : BossModifier
+    {
+        public OctaclesBoss()
+        {
+            this.Name = "Ocatcles";
+            this.PrefabFileName = "Ocatcles";
+            this.AudioPrefix = "Axolotl";
+            this.SpriteFileName = new Octacles().GetArtFileName();
+            this.UIColor = new Octacles().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.BannedFloorIndexes = new List<int>();
+            this.CanBeSummonedByMichael = false;
+        }
+
+        public override string GetDescription()
+        {
+            return "Clueless: All Non-Cursed Tiles Score 0";
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    public class NatBoss : BossModifier
+    {
+        public NatBoss()
+        {
+            this.Name = "Nat-H4";
+            this.PrefabFileName = "Nat-H4";
+            this.AudioPrefix = "NatH4";
+            this.SpriteFileName = new NathaServo().GetArtFileName();
+            this.UIColor = new NathaServo().GetUIColorA();
+            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.BannedFloorIndexes = new List<int>();
+            this.CanBeSummonedByMichael = false;
+        }
+
+        public override string GetDescription()
+        {
+            return "Disables X Random Item(s) Each Round";
+        }
+        public override Sprite GetBossSprite()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterSprites.ContainsKey(type))
+            {
+                Sprite value = Resources.Load<Sprite>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterSprites[type] = value;
+            }
+            return Character.CharacterSprites[type];
+        }
+        public override RuntimeAnimatorController GetRuntimeAnimatorController()
+        {
+            System.Type type = base.GetType();
+            if (!Character.CharacterRuntimeAnimators.ContainsKey(type))
+            {
+                RuntimeAnimatorController value = Resources.Load<RuntimeAnimatorController>("Piero/Players/" + this.SpriteFileName + "/" + this.SpriteFileName);
+                Character.CharacterRuntimeAnimators[type] = value;
+            }
+            return Character.CharacterRuntimeAnimators[type];
+        }
+    }
+    //Sandy Saguaro:
+    //Cretaceous Meg: 
+    //Beans: 
+    #endregion
 }

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MultiplayerMod")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2c2860b14c6bb6fe286fb0bc134eccf6527fda98")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3b04b64a3a9909fc49e6bf753a52428ffce26347")]
 [assembly: System.Reflection.AssemblyProductAttribute("MultiplayerMod")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MultiplayerMod")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
