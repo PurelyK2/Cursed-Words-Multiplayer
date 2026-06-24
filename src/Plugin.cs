@@ -10,8 +10,8 @@ using System.Linq;
 using UnityEngine.InputSystem.UI;
 using System.Threading.Tasks;
 using System.IO;
+using System.Collections;
 using nickeltin.SDF.Runtime;
-using System.Net.NetworkInformation;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -141,7 +141,11 @@ namespace CWMultiplayer
             }
             public static bool Prefix(ref int ____remainingGrids, ref EncounterController __instance, ref List<TileSelection> tiles, ref List<string> words, ref GridData ____gridData, ref List<HistoricWord> ____previousWords)
             {
-                if(!ReceivedInfo.hasOpponent) return true;
+                BonesBoss bones = new BonesBoss();
+                bones.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                BonesBoss.wordScoreTaken += bones.FloorAdjustedModification * tiles.Count;
+                
+                if(!ReceivedInfo.hasOpponent || GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType != NodeType.Boss) return true;
 
                 try
                 {
@@ -211,11 +215,12 @@ namespace CWMultiplayer
                 CursedUI.overrideWaitingButtonObj.SetActive(false);
                 CursedUI.waitingTextObj.SetActive(false);
                 CursedUI.ToggleOverlay(false);
+
                 return true;
             }
-            public static void Postfix(ref ScorePacket ____remainingTarget, ref int ____totalGridsPerRound, ref int ____remainingGrids, ref EncounterController __instance)
+            public static void Postfix(ref ScorePacket ____remainingTarget, ref int ____totalGridsPerRound, ref int ____remainingGrids, ref EncounterSummaryDisplayController ____encounterSummaryDisplayController)
             {
-                if(!ReceivedInfo.hasOpponent) return;
+                if(!ReceivedInfo.hasOpponent || GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType != NodeType.Boss) return;
 
                 try
                 {
@@ -269,6 +274,8 @@ namespace CWMultiplayer
 
                     currentRemainingTarget = ____remainingTarget;
                     CursedUI.UpdateHearts(CursedNetworking.myPlayerPacket.health, ReceivedInfo.opponentHealth);
+
+                    ____encounterSummaryDisplayController.ShowBoss(encounterController.GetBossModifiers()[0]);
                 }
                 catch (System.Exception e)
                 {
@@ -299,6 +306,7 @@ namespace CWMultiplayer
                     CursedNetworking.playerDataChanged = true;
                     CursedNetworking.UpdateAndSendPlayerPacket();
                     MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
+                    BonesBoss.wordScoreTaken = 0;
                 }
                 catch (System.Exception e)
                 {
@@ -334,6 +342,8 @@ namespace CWMultiplayer
                             bossModifier = new BonesBoss();
                         else if(foeCharacterType == typeof(Octacles))
                             bossModifier = new OctaclesBoss();
+                        else if(foeCharacterType == typeof(NathaServo))
+                            bossModifier = new NatBoss();
                         else if(foeCharacterType == typeof(SandySaguaro))
                             bossModifier = new SandySaguaroBoss();
                         else if(foeCharacterType == typeof(Spike))
@@ -399,12 +409,11 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref Animator ____portraitAnimator)
             {
-                if(ReceivedInfo.foeCharacter != null && new List<System.Type> { typeof(WetDennis), typeof(NinaNix), typeof(HayleyBayles), typeof(SamGambit), typeof(BonesTheDog), typeof(Octacles) }.Contains(ReceivedInfo.foeCharacter.GetType()))
+                if(ReceivedInfo.foeCharacter != null && new List<System.Type> { typeof(WetDennis), typeof(NinaNix), typeof(HayleyBayles), typeof(SamGambit), typeof(BonesTheDog), typeof(Octacles), typeof(NathaServo) }.Contains(ReceivedInfo.foeCharacter.GetType()))
                 {
-                    ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = new Vector3(-1f, 1f, 1f);
-
-                    Vector3 PAPos = ____portraitAnimator.gameObject.GetComponent<RectTransform>().localPosition;
-                    ____portraitAnimator.gameObject.GetComponent<RectTransform>().localPosition = new Vector3(PAPos.x - 50f, PAPos.y, PAPos.z);
+                    RectTransform rect = ____portraitAnimator.transform.parent.GetComponent<RectTransform>();
+                    rect.localScale = new Vector3(-1, 1, 1);
+                    rect.localPosition = new Vector3(200, rect.localPosition.y, rect.localPosition.z);
                 }
                 else
                     ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = Vector3.one;
@@ -491,11 +500,41 @@ namespace CWMultiplayer
 
         #region Boss Effects
         //Grid
+        [HarmonyPatch(typeof(GridUtilitySingleton), "GenerateGrid", new System.Type[] { typeof(int), typeof(int), typeof(int), typeof(int), typeof(List<HistoricWord>), typeof(List<BossModifier>), typeof(List<BoardGenVizInfo>), typeof(bool), typeof(List<Tile>)}, new ArgumentType[] { ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Out, ArgumentType.Normal, ArgumentType.Normal })]
+        public static class BossPreGridStuff_Patch
+        {
+            public static void Prefix(ref List<BossModifier> bossModifiers)
+            {
+                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
+                {
+                    MelonLogger.Msg("Vs Nat");
+                    
+                    encounterController.PulseBossModifier(typeof(NatBoss));
+
+                    NatBoss natBoss = new NatBoss();
+                    natBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                    natBoss.GetRandomizedUnavailableItems();
+                }
+            }
+        }
+        [HarmonyPatch(typeof(Player), "GetAllItems", new System.Type[] { typeof(bool) })]
+        public static class NatHoldsStartOfGridItems_Patch
+        {
+            public static void Postfix(ref List<Item> __result)
+            {
+                if(encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                {
+                    __result = (from item in __result where !NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()) select item).ToList();
+                }
+            }
+        }
         [HarmonyPatch(typeof(GridUtilitySingleton), "MakeStartOfGridBossAdjustments", new System.Type[] { typeof(GridData), typeof(List<BossModifier>), typeof(ChallengeRun), typeof(List<BoardGenVizInfo>), typeof(int), typeof(bool), typeof(bool)})]
-        public static class CustomBossModifiers_Patch
+        public static class BossGridModifiers_Patch
         {
             public static void Prefix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps, ref GridUtilitySingleton __instance)
             {
+                if(!ReceivedInfo.hasOpponent) return;
+
                 //Rodman
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(RodmanBoss)))
                 {
@@ -526,28 +565,74 @@ namespace CWMultiplayer
                     SamGambitBoss.chessPiece = chessPieces[Random.Range(0, chessPieces.Length)];
                 }
 
-                //Bones The Dog
-                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(BonesBoss)))
-                {
-                }
-
                 //Octacles
-                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(Octacles)))
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(OctaclesBoss)))
                 {
+                    MelonLogger.Msg("Vs Octacles");
+                    //look for cursed tiles on the board
+                    List<Tile> list = new List<Tile>();
+                    List<Vector2Int> tileCoords = new List<Vector2Int>();
+                    foreach (Tile tile in gridData.GetAvailableTiles())
+                    {
+                        if(tile.MyGlyphType != GlyphType.Letter)
+                        {
+                            tileCoords.Add(tile.Coordinates);
+                        }
+                    }
+                    OctaclesBoss octaclesBoss = new OctaclesBoss();
+                    octaclesBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                    for(int i = 0; i < octaclesBoss.FloorAdjustedModification; i++)
+                    {
+                        if(tileCoords.Count > 0)
+                        {
+                            //remove all special things from it
+                            Tile changedTile = gridData.GetTileAtCoordinates(tileCoords[Random.Range(0, tileCoords.Count)]);
+                            changedTile.SetLetter(Vocabulary.ActiveLanguageVocabulary.LanguageAlphabet.GetRandomConsonantWeighted());
+					        changedTile.SetGlyphType(GlyphType.Letter);
+                            changedTile.SetTileType(TileType.Normal);
+                            list.Add(changedTile);
+                        }
+                    }
+                    //update the grid
+                    if (list.Count > 0)
+                    {
+                        BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(OctaclesBoss), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
+                        vizSteps.Add(item);
+                    }
                 }
 
-                //Nat-H4
-                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(NatBoss)))
+                //remove boss modifiers for custom boss effect guys
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SandySaguaroBoss)))
                 {
+                    
                 }
+            }
+            public static void Postfix(ref List<BossModifier> bossModifiers)
+            {
+
             }
         }
         //Score
+        [HarmonyPatch(typeof(EncounterController), "GetItemsForWordSubmission", new System.Type[] { typeof(List<TileSelection>), typeof(bool) })]
+        public static class NatCaughtRedHanded_Patch
+        {
+            public static void Postfix(ref bool isIncludingInventory, ref List<Item> __result)
+            {
+                if(isIncludingInventory && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                {
+                    int resultCount = __result.Count;
+                    __result.RemoveAll(item => GameStatics.GetPlayer().GetAllItems(false).Contains(item) && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()));
+                    if(resultCount == __result.Count) MelonLogger.Msg("Error: Didn't Remove Any Items");
+                }
+            }
+        }
         [HarmonyPatch(typeof(ScoreCalculation), "ApplyBossModifier", new System.Type[] { typeof(List<TileSelection>), typeof(List<ScoreCalcVizInfo>), typeof(BossModifier) })]
         public static class BossScoreModifiers_Patch
         {
             public static void Postfix(ref ScoreCalcVizInfo __result, ref BossModifier bossModifier, ref List<TileSelection> tiles)
             {
+                if(!ReceivedInfo.hasOpponent) return;
+
                 if(bossModifier is NinaNixBoss)
                 {
                     MelonLogger.Msg("Vs Nina");
@@ -557,8 +642,13 @@ namespace CWMultiplayer
                     {
                         num *= -0.95f;
                     }
-                    __result.WordBonus = new WordBonusToken((long)Mathf.RoundToInt(num * 100f), true, false);
+                    __result.WordBonus = new WordBonusToken((long)Mathf.RoundToInt(num * 100f), true);
                     __result.LettersInWordToPulse.AddRange(theseTiles);
+                }
+                if(bossModifier is BonesBoss)
+                {
+                    MelonLogger.Msg("Vs Bones");
+                    __result.WordBonus = new WordBonusToken((long)-1 * BonesBoss.wordScoreTaken / 2, false);
                 }
             }
         }
@@ -581,15 +671,67 @@ namespace CWMultiplayer
                 }
             }
         }
+        //Nat's Thievery
+        [HarmonyPatch(typeof(InventoryVisualController), "PopulateStickers")]
+        public static class NatTakesStickers_Patch
+        {
+            public static void Postfix(ref List<ItemObject> ____stickerObjects)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
+
+                Player player = GameStatics.GetPlayer();
+                if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
+                {
+                    if(encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    {
+                        MelonLogger.Msg("Searching Items");
+                        foreach(ItemObject item in ____stickerObjects)
+                        {
+                            if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
+                            {
+                                SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                MelonLogger.Msg("Found Item: " + item.MyItem.Name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        [HarmonyPatch(typeof(InventoryVisualController), "PopulateStamps")]
+        public static class NatTakesStamps_Patch
+        {
+            public static void Postfix(ref List<ItemObject> ____stampObjects)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
+
+                Player player = GameStatics.GetPlayer();
+                if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
+                {
+                    if(encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    {
+                        foreach(ItemObject item in ____stampObjects)
+                        {
+                            if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
+                            {
+                                SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                MelonLogger.Msg("Found Item: " + item.MyItem.Name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         #endregion
     }
     public static class ReceivedInfo
     {
         public static bool hasOpponent = true;
         public static bool opponentIsInBoss = false;
-        public static ScorePacket opponentHighscore = new ScorePacket(1);
+        public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new SamGambit();
+        public static Character foeCharacter = new NathaServo();
 
         public static void ResetInfo()
         {
@@ -1630,7 +1772,7 @@ namespace CWMultiplayer
         }
         public override string GetDescription()
         {
-            return "Gambit: Can Only Move Like The Selected Chess Piece (Currently: " + chessPiece.ToString() + ")";
+            return "Can Only Move Like The Selected Chess Piece (Currently: " + chessPiece.ToString() + ")";
         }
         public override Sprite GetBossSprite()
         {
@@ -1655,6 +1797,7 @@ namespace CWMultiplayer
     }
     public class BonesBoss : BossModifier
     {
+        public static int wordScoreTaken = 0;
         public BonesBoss()
         {
             this.Name = "Bones The Dog";
@@ -1662,13 +1805,13 @@ namespace CWMultiplayer
             this.AudioPrefix = "BonesTheDog";
             this.SpriteFileName = new BonesTheDog().GetArtFileName();
             this.UIColor = new BonesTheDog().GetUIColorA();
-            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
-            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyModifier = new List<int> { 1, 2, 3, 4, 5, 6 };
+            this.DifficultyIncrease = new List<int> { 1, 1, 2, 2, 3, 4 };
             this.CanBeSummonedByMichael = false;
         }
         public override string GetDescription()
         {
-            return "Gamba: -0 WORD SCORE. Decreased by X for each tile used in your word."; //Stacks for the whole game
+            return "Get -" + (wordScoreTaken / 2) + " WORD SCORE. Decreased by " + ((float)FloorAdjustedModification / 2f) + " for each tile used in your word."; //Stacks for the whole game
         }
         public override Sprite GetBossSprite()
         {
@@ -1700,7 +1843,7 @@ namespace CWMultiplayer
             this.AudioPrefix = "Axolotl";
             this.SpriteFileName = new Octacles().GetArtFileName();
             this.UIColor = new Octacles().GetUIColorA();
-            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.DifficultyModifier = new List<int> { 1, 1, 2, 3, 4, 5};
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0};
             this.BannedFloorIndexes = new List<int>();
             this.CanBeSummonedByMichael = false;
@@ -1708,7 +1851,8 @@ namespace CWMultiplayer
 
         public override string GetDescription()
         {
-            return "Clueless: All Non-Cursed Tiles Score 0";
+            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return FloorAdjustedModification + " Cursed " + (FloorAdjustedModification == 1 ? "Tile Is" : "Tiles Are") + " Replaced With " + (FloorAdjustedModification == 1 ? "A Basic Tile" : "Basic Tiles");
         }
         public override Sprite GetBossSprite()
         {
@@ -1733,6 +1877,7 @@ namespace CWMultiplayer
     }
     public class NatBoss : BossModifier
     {
+        public static List<Item> unavailableItemsList = new List<Item>();
         public NatBoss()
         {
             this.Name = "Nat-H4";
@@ -1740,15 +1885,16 @@ namespace CWMultiplayer
             this.AudioPrefix = "NatH4";
             this.SpriteFileName = new NathaServo().GetArtFileName();
             this.UIColor = new NathaServo().GetUIColorA();
-            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0};
-            this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0};
+            this.DifficultyModifier = new List<int> { 1, 1, 2, 2, 3, 3};
+            this.DifficultyIncrease = new List<int> { 1, 1, 1, 1, 1, 1};
             this.BannedFloorIndexes = new List<int>();
             this.CanBeSummonedByMichael = false;
         }
 
         public override string GetDescription()
         {
-            return "Disables X Random Item(s) Each Round";
+            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return "Disables " + FloorAdjustedModification + " Random " + (FloorAdjustedModification == 1 ? "Item" : "Items") + " Each Round";
         }
         public override Sprite GetBossSprite()
         {
@@ -1769,6 +1915,26 @@ namespace CWMultiplayer
                 Character.CharacterRuntimeAnimators[type] = value;
             }
             return Character.CharacterRuntimeAnimators[type];
+        }
+    
+        public List<Item> GetRandomizedUnavailableItems()
+        {
+            unavailableItemsList.RemoveAll(item => true);
+
+            Player player = GameStatics.GetPlayer();
+            List<Item> inventory = player.GetAllItems();
+
+            for(int i = 0; i < FloorAdjustedModification; i++)
+            {
+                List<Item> checkableInventory = (from item in inventory where (unavailableItemsList.Count(i => i.GetType() == item.GetType()) == 0 && item.UpgradeableComponents.Count < 2) select item).ToList();
+                unavailableItemsList.Add(checkableInventory[Random.Range(0, checkableInventory.Count)]);
+            }
+
+            MelonLogger.Msg("Taken Item(s): " + string.Join(" | ", unavailableItemsList));
+
+			CharacterInfoPanel.SingletonInventoryVisualController.PopulateAll();
+
+            return unavailableItemsList;
         }
     }
     //Sandy Saguaro:
