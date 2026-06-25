@@ -43,13 +43,14 @@ namespace CWMultiplayer
         public static EncounterSummaryDisplayController encounterSummaryDisplayController;
         public static int MegMoney = 0;
         #endregion
-
+        public static bool debugMode = true;
+        
         #region Melon Stuff
         public override void OnInitializeMelon()
         {
             TextureLoaderMod.TextureLoadInit();
             CursedNetworking.SetUpNetworking();
-            MelonLogger.Msg("Loaded Multiplayer Mod");
+            if(debugMode) MelonLogger.Msg("Loaded Multiplayer Mod");
             CursedUI.ToggleOverlay(false);
         }
         public override void OnApplicationQuit()
@@ -60,7 +61,7 @@ namespace CWMultiplayer
                 SteamMatchmaking.LeaveLobby(CursedUI.lobbyID);
                 CursedUI.lobbyName = "";
             }
-            MelonLogger.Msg("Shut Down Multiplayer Mod");
+            if(debugMode) MelonLogger.Msg("Shut Down Multiplayer Mod");
         }
         #endregion
 
@@ -165,7 +166,7 @@ namespace CWMultiplayer
                     {
                         if(CursedNetworking.myPlayerPacket.inBoss)
                         {
-                            MelonLogger.Msg("Finished Battle!");
+                            if(debugMode) MelonLogger.Msg("Finished Battle!");
                             //Get Final Score To Test For High Score
                             List<Item> itemsList = new List<Item>();
                             {
@@ -201,7 +202,7 @@ namespace CWMultiplayer
                         }
                         else
                         {
-                            MelonLogger.Msg("Opponent Is Done, continuing...");
+                            if(MultiplayerManager.debugMode) MelonLogger.Msg("Opponent Is Done, continuing...");
                         }
                         if(CursedNetworking.myPlayerPacket.highScore.Score > 0)
                         {
@@ -236,22 +237,22 @@ namespace CWMultiplayer
                             ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
                         else ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + 1);
                         if(mostRecentScorePacket > CursedNetworking.myPlayerPacket.highScore) CursedNetworking.myPlayerPacket.UpdatePacket(true, mostRecentScorePacket, CursedNetworking.myPlayerPacket.health);
-                        else MelonLogger.Msg("Not Highest Score");
+                        else if(debugMode) MelonLogger.Msg("Not Highest Score");
                     }
                     else if(CursedNetworking.myPlayerPacket.highScore.Score > 0 && ReceivedInfo.opponentHighscore.Score > 0 && !ReceivedInfo.opponentIsInBoss && !CursedNetworking.myPlayerPacket.inBoss)
                     {
                         if(ReceivedInfo.opponentHighscore > CursedNetworking.myPlayerPacket.highScore)
                         {
                             CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
-                            MelonLogger.Msg("You Lost A Life!\nCurrent Life: " + CursedNetworking.myPlayerPacket.health);
+                            if(debugMode) MelonLogger.Msg("You Lost A Life!\nCurrent Life: " + CursedNetworking.myPlayerPacket.health);
                         }
                         else if(ReceivedInfo.opponentHighscore == CursedNetworking.myPlayerPacket.highScore)
                         {
-                            MelonLogger.Msg("You Tied And Both Lose A Life!");
+                            if(debugMode) MelonLogger.Msg("You Tied And Both Lose A Life!");
                         }
                         else
                         {
-                            MelonLogger.Msg("You Won The Floor!");
+                            if(debugMode) MelonLogger.Msg("You Won The Floor!");
                             ReceivedInfo.opponentHealth -= 1;
                         }
 
@@ -267,7 +268,7 @@ namespace CWMultiplayer
                         }
                         else
                         {
-                            MelonLogger.Msg("Game Over! You lose!");
+                            if(debugMode) MelonLogger.Msg("Game Over! You lose!");
                             ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
                             ReceivedInfo.ResetInfo();
                             CursedNetworking.myPlayerPacket.ResetPacket();
@@ -304,12 +305,12 @@ namespace CWMultiplayer
 
                 if(rewardDescription == "Boss defeated!" && rewardCashAmount == 5)
                 {
-                    MelonLogger.Msg("Increasing Boss Payout");
+                    if(debugMode) MelonLogger.Msg("Increasing Boss Payout");
                     rewardCashAmount += GameStatics.GetPlayer().CurrentRunProgress.Ascension == AscensionLevel.OneFewerGrid ? 6 : 8;
                 }
                 else if(rewardDescription == "Boss defeated!")
                 {
-                    MelonLogger.Msg("Must've Missed Somethin'");
+                    if(debugMode) MelonLogger.Msg("Must've Missed Somethin'");
                 }
             }
         }
@@ -329,7 +330,7 @@ namespace CWMultiplayer
                     CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
                     CursedNetworking.playerDataChanged = true;
                     CursedNetworking.UpdateAndSendPlayerPacket();
-                    MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
+                    if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
                     BonesBoss.wordScoreTaken = 0;
                 }
                 catch (System.Exception e)
@@ -376,7 +377,7 @@ namespace CWMultiplayer
                             bossModifier = new HumanBoyBoss();
                         else if(foeCharacterType == typeof(PrismaticBean))
                             bossModifier = new PrismaticBeanBoss();
-                        else MelonLogger.Msg("Option Is An Invalid Character");
+                        else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
                     }
 
                     if(bossModifier.GetType() != typeof(HumanBoyBoss))
@@ -472,12 +473,14 @@ namespace CWMultiplayer
             }
         }
         //End Game Boss Unlock Override
-        [HarmonyPatch(typeof(SaveManager), "AddCharacterToUnlockedCharacters")]
+        [HarmonyPatch(typeof(UnlocksBannerController), "Populate")]
         public static class NoYouDidntUnlock_Patch
         {
-            public static bool Prefix()
+            public static void Prefix()
             {
-                return ReceivedInfo.foeCharacter == null;
+                if(!ReceivedInfo.hasOpponent) return;
+
+                GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.AchievementsEarned = new List<Achievement>();
             }
         }
         #endregion
@@ -531,12 +534,12 @@ namespace CWMultiplayer
             if(SteamMatchmaking.GetNumLobbyMembers(CursedUI.lobbyID) > 1 && !ReceivedInfo.hasOpponent)
             {
                 ReceivedInfo.hasOpponent = true;
-                MelonLogger.Msg("2 People In Lobby!");
+                if(debugMode) MelonLogger.Msg("2 People In Lobby!");
             }
             if(SteamMatchmaking.GetNumLobbyMembers(CursedUI.lobbyID) == 1 && ReceivedInfo.hasOpponent)
             {
                 ReceivedInfo.hasOpponent = false;
-                MelonLogger.Msg("Opponent Disconnected");
+                if(debugMode) MelonLogger.Msg("Opponent Disconnected");
                 ReceivedInfo.ResetInfo();
                 CursedNetworking.myPlayerPacket.ResetPacket();
             }
@@ -570,7 +573,7 @@ namespace CWMultiplayer
 
                 if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
                 {
-                    MelonLogger.Msg("Vs Nat");
+                    if(debugMode) MelonLogger.Msg("Vs Nat");
                     
                     encounterController.PulseBossModifier(typeof(NatBoss));
 
@@ -602,7 +605,7 @@ namespace CWMultiplayer
                 //Rodman
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(RodmanBoss)))
                 {
-                    MelonLogger.Msg("Fighting Rodman");
+                    if(debugMode) MelonLogger.Msg("Fighting Rodman");
                     List<Tile> list = new List<Tile>();
                     foreach (Tile tile in gridData.GetAvailableTiles())
                     {
@@ -621,7 +624,7 @@ namespace CWMultiplayer
                 //Hayley Bayles (Literally Just AddNumbers)
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(HayleyBaylesBoss)))
                 {
-                    MelonLogger.Msg("Fighting Hayley");
+                    if(debugMode) MelonLogger.Msg("Fighting Hayley");
                 }
 
                 //Sam Gambit (Like Sicilian Defense)
@@ -636,7 +639,7 @@ namespace CWMultiplayer
                 //Octacles
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(OctaclesBoss)))
                 {
-                    MelonLogger.Msg("Vs Octacles");
+                    if(debugMode) MelonLogger.Msg("Vs Octacles");
                     //look for cursed tiles on the board
                     List<Tile> list = new List<Tile>();
                     List<Vector2Int> tileCoords = new List<Vector2Int>();
@@ -670,15 +673,9 @@ namespace CWMultiplayer
 
                 //Nat In Pre-Grid
 
-                //Vs Messages For Ones That Stay The Same
-                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SandySaguaroBoss)))
-                {
-                    MelonLogger.Msg("Vs Sandy");
-                }
-                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(HumanBoyBoss)))
-                {
-                    MelonLogger.Msg("Vs Human Boy");
-                }
+                //Sandy Is The Same
+                //Meg Is Defensive
+                //Human Boy Is The Same
 
                 //remove boss modifiers for custom boss effect guys
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
@@ -697,7 +694,7 @@ namespace CWMultiplayer
                 
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
                 {
-                    MelonLogger.Msg("Vs Beans");
+                    if(debugMode) MelonLogger.Msg("Vs Beans");
 
                     List<Tile> list = new List<Tile>();
                     List<Vector2Int> tileCoords = new List<Vector2Int>();
@@ -707,7 +704,7 @@ namespace CWMultiplayer
                     {
                         if(tile.MyGlyphType != GlyphType.Letter)
                         {
-                            tile.SetTileType(new TileType[] { TileType.Blue, TileType.Cactus, TileType.Glitch, TileType.Gold, TileType.Green, TileType.Pink, TileType.Purple, TileType.Red, TileType.Shiny, TileType.Void, TileType.White, TileType.Blue, TileType.Red, TileType.Shiny, TileType.Void }[Random.Range(0,15)]);
+                            tile.SetTileType(new TileType[] { TileType.Blue, TileType.Cactus, TileType.Gold, TileType.Green, TileType.Pink, TileType.Purple, TileType.Red, TileType.Void, TileType.White, TileType.Blue, TileType.Red, TileType.Void }[Random.Range(0,12)]);
                             list.Add(tile);
                         }
                     }
@@ -722,7 +719,7 @@ namespace CWMultiplayer
                     List<Tile> list2 = new List<Tile>();
                     foreach (Tile tile in gridData.GetAvailableTiles())
                     {
-                        if(tile.MyGlyphType != GlyphType.Letter && new TileType[] {TileType.Blue, TileType.Red, TileType.Shiny, TileType.Void}.Contains(tile.MyTileType))
+                        if(tile.MyGlyphType != GlyphType.Letter && new TileType[] {TileType.Blue, TileType.Red, TileType.Void}.Contains(tile.MyTileType))
                         {
                             tile.MyGlyphType = GlyphType.Letter;
                             tile.SetLetter(Vocabulary.ActiveLanguageVocabulary.LanguageAlphabet.GetRandomConsonantWeighted());
@@ -763,7 +760,7 @@ namespace CWMultiplayer
 
                 if(bossModifier is NinaNixBoss)
                 {
-                    MelonLogger.Msg("Vs Nina");
+                    if(debugMode) MelonLogger.Msg("Vs Nina");
                     float num = 1f;
                     List<Tile> theseTiles = tiles.Select(tileSelection => tileSelection.SelectedTile).ToList();
                     foreach (Tile tile in theseTiles)
@@ -775,7 +772,7 @@ namespace CWMultiplayer
                 }
                 if(bossModifier is BonesBoss)
                 {
-                    MelonLogger.Msg("Vs Bones");
+                    if(debugMode) MelonLogger.Msg("Vs Bones");
                     __result.WordBonus = new WordBonusToken((long)-1 * BonesBoss.wordScoreTaken / 2, false);
                 }
             }
@@ -842,7 +839,7 @@ namespace CWMultiplayer
                             {
                                 SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
                                 if(itemImage != null) itemImage.color = UnityEngine.Color.black;
-                                MelonLogger.Msg("Found Item: " + item.MyItem.Name);
+                                if(debugMode) MelonLogger.Msg("Found Item: " + item.MyItem.Name);
                             }
                         }
                     }
@@ -907,7 +904,7 @@ namespace CWMultiplayer
     public static class ReceivedInfo
     {
         public static bool hasOpponent = false;
-        public static bool noBossEffects = false;
+        public static bool noBossEffects = true;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
@@ -933,7 +930,7 @@ namespace CWMultiplayer
                     return;
                 }
             }
-            MelonLogger.Msg("Error: Couldn't Find Character");
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Error: Couldn't Find Character");
         }
     }
     public class CursedNetworking : MonoBehaviour
@@ -985,7 +982,7 @@ namespace CWMultiplayer
             System.Environment.SetEnvironmentVariable("SteamAppId", "3856460");
             System.Environment.SetEnvironmentVariable("SteamGameId", "3856460");
 
-            MelonLogger.Msg("Steam Linked!");
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Steam Linked!");
 
             myPlayerPacket = new PlayerPacket("", 3);
 
@@ -996,14 +993,14 @@ namespace CWMultiplayer
             if(CursedUI.lobbyID == CSteamID.Nil || !playerDataChanged) return;
             
             SteamMatchmaking.SetLobbyMemberData(CursedUI.lobbyID, "PlayerPacket", myPlayerPacket.GetAsString(':'));
-            MelonLogger.Msg("Updated Info To: " + myPlayerPacket.GetAsString(':'));
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Updated Info To: " + myPlayerPacket.GetAsString(':'));
             playerDataChanged = false;
         }
         public static void ReceiveAndUpdateFoeInfo(LobbyDataUpdate_t callback)
         {
             if(callback.m_bSuccess == 0)
             {
-                MelonLogger.Msg("Failed To Retrieve Data For Lobby: " + callback.m_ulSteamIDLobby);
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Failed To Retrieve Data For Lobby: " + callback.m_ulSteamIDLobby);
                 return;
             }
 
@@ -1022,7 +1019,7 @@ namespace CWMultiplayer
                 }
                 else if(!(tempLobbyDataList.Contains("Player 1") || tempLobbyDataList.Contains("Player 2")))
                 {
-                    MelonLogger.Msg("Error In Data, Data Found: " + string.Join(" | ", tempLobbyDataList));
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Error In Data, Data Found: " + string.Join(" | ", tempLobbyDataList));
                 }
             }
 
@@ -1034,18 +1031,18 @@ namespace CWMultiplayer
                     //Meg Boss Money
                     if(highScoreLong > ReceivedInfo.opponentHighscore.Score && MultiplayerManager.encounterController != null && MultiplayerManager.encounterController.GetBossModifiers().Count(modifier => modifier.GetType() == typeof(CretaceousMegBoss)) > 0)
                     {
-                        MelonLogger.Msg("Updating Meg Money");
+                        if(MultiplayerManager.debugMode) MelonLogger.Msg("Updating Meg Money");
                         int money = (int)highScoreLong / (GameStatics.GetPlayer().CurrentRunProgress.GetStage() * GameStatics.GetPlayer().CurrentRunProgress.GetStage() * 50);
                         MultiplayerManager.SetMegMoney(money);
                     }
 
                     ReceivedInfo.opponentHighscore = new ScorePacket(highScoreLong);
                     ReceivedInfo.opponentHealth = health;
-                    MelonLogger.Msg("Received Info: " + string.Join(" | ", lobbyDataList));
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Received Info: " + string.Join(" | ", lobbyDataList));
                     if(!ReceivedInfo.hasOpponent)
                     {
                         ReceivedInfo.hasOpponent = true;
-                        MelonLogger.Msg("You Now Have An Opponent!");
+                        if(MultiplayerManager.debugMode) MelonLogger.Msg("You Now Have An Opponent!");
                     }
                     if(!string.IsNullOrEmpty(lobbyDataList[4]))
                     {
@@ -1058,12 +1055,12 @@ namespace CWMultiplayer
                 }
                 else
                 {
-                    MelonLogger.Msg("You Updated Info To: " + string.Join(" | ", lobbyDataList));
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("You Updated Info To: " + string.Join(" | ", lobbyDataList));
                 }
             }
             else if(lobbyDataList.Count() == 4)
             {
-                MelonLogger.Msg("Failed To Update Player Packet Info - Ints Didn't Parse: " + string.Join(" | ", lobbyDataList));
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Failed To Update Player Packet Info - Ints Didn't Parse: " + string.Join(" | ", lobbyDataList));
             }
         }
     }
@@ -1569,7 +1566,7 @@ namespace CWMultiplayer
 
                 if(inputLobbyCode == "")
                 {
-                    MelonLogger.Msg("Getting Random Lobby");
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Getting Random Lobby");
                 }
                 
                 lobbyName = "Random";
@@ -1627,18 +1624,18 @@ namespace CWMultiplayer
                 ulong thisLobbyID = lobby.m_SteamID;
                 if((thisLobbyID % 10000).ToString("D4") == inputLobbyCode)
                 {
-                    MelonLogger.Msg("Found Chosen Lobby! Joining...");
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Found Chosen Lobby! Joining...");
                     SteamMatchmaking.JoinLobby(lobby);
                     return;
                 }
                 else if(inputLobbyCode == "" && SteamMatchmaking.GetNumLobbyMembers(lobby) == 1)
                 {
-                    MelonLogger.Msg("Joining Random Lobby");
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Joining Random Lobby");
                     SteamMatchmaking.JoinLobby(lobby);
                     return;
                 }
             }
-            MelonLogger.Msg("Failed To Get A Lobby To Join");
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Failed To Get A Lobby To Join");
             if(inputLobbyCode == "")
                 lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "No Lobby Found";
             else
@@ -1647,14 +1644,14 @@ namespace CWMultiplayer
         void OnLobbyEnter(LobbyEnter_t callback)
         {
             if(CursedNetworking.isHost) return;
-            MelonLogger.Msg("Joined Lobby");
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Joined Lobby");
 
             CursedNetworking.myPlayerPacket.playerName = "Player 2";
-            MelonLogger.Msg("You Are Player 2");
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("You Are Player 2");
 
             if(callback.m_EChatRoomEnterResponse != 1)
             {
-                MelonLogger.Msg("Failed To Enter Lobby: " + (uint)callback.m_EChatRoomEnterResponse);
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Failed To Enter Lobby: " + (uint)callback.m_EChatRoomEnterResponse);
                 return;
             }
             lobbyID = (CSteamID)callback.m_ulSteamIDLobby;
@@ -1665,7 +1662,7 @@ namespace CWMultiplayer
         {
             if(callback.m_eResult != EResult.k_EResultOK)
             {
-                MelonLogger.Msg("Error: Lobby Creation Failed");
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Error: Lobby Creation Failed");
                 return;
             }
 
@@ -1673,7 +1670,7 @@ namespace CWMultiplayer
             lobbyName = ((ulong)lobbyID % 10000).ToString("D4");
             lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby ID: " + lobbyName;
             
-            MelonLogger.Msg("Lobby Created: " + lobbyID);
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Lobby Created: " + lobbyID);
         }
         public static void DisableCallbacks()
         {
@@ -1717,7 +1714,7 @@ namespace CWMultiplayer
                         myHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.threeHeartsSprite;
                         break;
                     default:
-                        MelonLogger.Msg("Error: Invalid Number Of Hearts for Me");
+                        if(MultiplayerManager.debugMode) MelonLogger.Msg("Error: Invalid Number Of Hearts for Me");
                         return;
                 }
                 switch(foeHearts)
@@ -1735,7 +1732,7 @@ namespace CWMultiplayer
                         foeHeartsObj.GetComponent<Image>().sprite = TextureLoaderMod.threeHeartsSprite;
                         break;
                     default:
-                        MelonLogger.Msg("Error: Invalid Number Of Hearts for Foe");
+                        if(MultiplayerManager.debugMode) MelonLogger.Msg("Error: Invalid Number Of Hearts for Foe");
                         return;
                 }
 
@@ -1768,7 +1765,7 @@ namespace CWMultiplayer
                 string dllFolder = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
                 if(string.IsNullOrEmpty(dllFolder))
                 {
-                    MelonLogger.Msg("TextureLoaderMod: Unable to resolve DLL folder.");
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("TextureLoaderMod: Unable to resolve DLL folder.");
                     return;
                 }
 
@@ -1779,7 +1776,7 @@ namespace CWMultiplayer
             }
             catch(System.Exception e)
             {
-                MelonLogger.Msg("TextureLoaderMod: " + e);
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("TextureLoaderMod: " + e);
             }
         }
 
@@ -1811,14 +1808,14 @@ namespace CWMultiplayer
                 var loadMethod = typeof(Texture2D).GetMethod("LoadImage", new[] { typeof(byte[]) });
                 if(loadMethod == null)
                 {
-                    MelonLogger.Msg("TextureLoaderMod: Texture2D.LoadImage is unavailable.");
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("TextureLoaderMod: Texture2D.LoadImage is unavailable.");
                     return null;
                 }
 
                 bool loaded = (bool)loadMethod.Invoke(texture, new object[] { imageData });
                 if(!loaded)
                 {
-                    MelonLogger.Msg("TextureLoaderMod: Failed to load image bytes for " + filePath);
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("TextureLoaderMod: Failed to load image bytes for " + filePath);
                     return null;
                 }
 
@@ -1830,7 +1827,7 @@ namespace CWMultiplayer
             }
             catch (System.Exception e)
             {
-                MelonLogger.Msg("Error Loading Sprite From File: " + filePath + " -> " + e);
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Error Loading Sprite From File: " + filePath + " -> " + e);
                 return null;
             }
         }
@@ -2118,7 +2115,7 @@ namespace CWMultiplayer
                 unavailableItemsList.Add(checkableInventory[Random.Range(0, checkableInventory.Count)]);
             }
 
-            MelonLogger.Msg("Taken Item(s): " + string.Join(" | ", unavailableItemsList));
+            if(MultiplayerManager.debugMode) MelonLogger.Msg("Taken Item(s): " + string.Join(" | ", unavailableItemsList));
 
 			CharacterInfoPanel.SingletonInventoryVisualController.PopulateAll();
 
