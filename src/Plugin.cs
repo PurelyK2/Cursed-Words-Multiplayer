@@ -20,17 +20,19 @@ using System.Data.SqlTypes;
 
 /// To do:
 /// 1. Make Images For Hearts Work (Use Emojis?)
-/// 3. Replace boss sprites with foe's character's sprites (for secret characters, use their boss stuff)
-/// 7. If you lose a normal round, lose a heart instead of the game (And maybe get some cash)
-/// 10. Turn Off Continue Button If In Lobby
-/// 13. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 16. Make Fairies AND Diving Mask Ungettable
-/// 17. Add items to affect opponents
-/// 18. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 19. Give Boss Effects For All Characters!
-/// 20. Add Boss Effect Switch For Lobby Variable
+/// 2. Replace boss sprites with foe's character's sprites (for secret characters, use their boss stuff)
+/// 3. If you lose a normal round, lose a heart instead of the game (And maybe get some cash)
+/// 4. Turn Off Continue Button If In Lobby
+/// 5. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 6. Make Fairies AND Diving Mask Ungettable
+/// 7. Add items to affect opponents
+/// 8. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 9. Add Boss Effect Switch For Lobby Variable
+/// 10. Balance Items - Cursed VHS: Rare or Legendary | KingOfTheBridge: Common? |  
 
-/// 11. Increase Boss Payout To if you won on first grid
+/// 11. ADD SAM GAMBIT'S ABILITY!!!
+/// 12. Change HB's Ability?
+
 namespace CWMultiplayer
 {
     public class MultiplayerManager : MelonMod
@@ -127,6 +129,7 @@ namespace CWMultiplayer
                 if(____bossModifiers.Count > 0)
                 {
                     CursedNetworking.myPlayerPacket.inBoss = true;
+                    if(ReceivedInfo.noBossEffects) ____bossModifiers = new List<BossModifier>();
                 }
                 else CursedNetworking.myPlayerPacket.highScore = new ScorePacket(0);
 
@@ -202,16 +205,7 @@ namespace CWMultiplayer
                         }
                         else
                         {
-                            if(MultiplayerManager.debugMode) MelonLogger.Msg("Opponent Is Done, continuing...");
-                        }
-                        if(CursedNetworking.myPlayerPacket.highScore.Score > 0)
-                        {
-                            if(CursedNetworking.myPlayerPacket.highScore > ReceivedInfo.opponentHighscore && ReceivedInfo.opponentHealth <= 0)
-                            {
-                                GameStatics.GetPlayer().CurrentRunProgress.SetStage(GameStatics.GetNumberOfStages());
-                                GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType = NodeType.Boss;
-                                GameStatics.GetPlayer().HasFacedUncursedBoss = true;
-                            }
+                            if(debugMode) MelonLogger.Msg("Opponent Is Done, continuing...");
                         }
                     }
                 }
@@ -293,6 +287,22 @@ namespace CWMultiplayer
                 await Task.Delay(10000);
                 
                 CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
+            }
+        }
+        //Skip to the end if you won
+        [HarmonyPatch(typeof(RunProgress), "IsFinalStage")]
+        public static class Winning_Patch
+        {
+            public static void Postfix(ref bool __result)
+            {
+                if(ReceivedInfo.hasOpponent && CursedNetworking.myPlayerPacket.highScore.Score > 0)
+                {
+                    if(CursedNetworking.myPlayerPacket.highScore > ReceivedInfo.opponentHighscore && ReceivedInfo.opponentHealth <= 0)
+                    {
+                        __result = true;
+                        if(debugMode) MelonLogger.Msg("YOU WON! (Tell K2 If The Victory Screen Didn't Show Up)");
+                    }
+                }
             }
         }
         //Boss Reward Increase To Make Up For Grids
@@ -473,14 +483,14 @@ namespace CWMultiplayer
             }
         }
         //End Game Boss Unlock Override
-        [HarmonyPatch(typeof(UnlocksBannerController), "Populate")]
+        [HarmonyPatch(typeof(EncounterController), "ShowAchievementSummaryAndChangeScene")]
         public static class NoYouDidntUnlock_Patch
         {
             public static void Prefix()
             {
                 if(!ReceivedInfo.hasOpponent) return;
 
-                GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.AchievementsEarned = new List<Achievement>();
+                GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.CharactersUnlocked = new List<Character>();
             }
         }
         #endregion
@@ -785,12 +795,20 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent || !encounterController.GetBossModifiers().Select(t => t.GetType()).Contains(typeof(SamGambitBoss))) return;
 
-                List<TileSelection> validTiles = __result;
+                List<TileSelection> validTiles = __result.ToList();
 
-                //Normal Piece Change
+                //Normal Piece Change (Chess Pieces Don't Change)
                 if(currentTiles[currentTiles.Count - 1].MyGlyphType != GlyphType.Chess)
                 {
-                    //Remove adjacent tiles (RemoveAll?)
+                    foreach(TileSelection tileSelection in __result)
+                    {
+                        if(__instance.GetTilesAdjacentToCoordinates(gridData, tileSelection.SelectedTile.Coordinates, false).Contains(tileSelection.SelectedTile))
+                        {
+                            validTiles.Remove(tileSelection);
+                            if(debugMode) MelonLogger.Msg("Adjacent Tile Found And Removed");
+                        }
+                    }
+                    validTiles.AddRange(from moves in ChessPieces.GetValidChessMoves(gridData, GameStatics.GetPlayer().GetAllItems(), currentTiles[currentTiles.Count - 1], tileSelectionManager) where !validTiles.Contains(moves) select moves);
                     //Add tiles for chess moves (GetValidChessMoves?)
                     //Remove Duplicates (MakeUnique?)
                 }
@@ -1064,7 +1082,7 @@ namespace CWMultiplayer
             }
         }
     }
-    public class CursedUI //MADE IT SO HEALTH BAR (TOGGLE OVERLAY) DOESN'T SHOW!!!
+    public class CursedUI
     {
         #region GameObjects
         public static GameObject canvasObj = new GameObject("Canvas", new System.Type[] { typeof(Canvas), typeof(RectTransform), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(CursedUI), typeof(UnityEngine.UI.Image) });
@@ -1692,7 +1710,7 @@ namespace CWMultiplayer
         {
             foreach(GameObject thisObject in UIObjects)
             {
-                thisObject.SetActive(false);
+                thisObject.SetActive(turnOn);
             }
         }
         public static void UpdateHearts(int myHearts, int foeHearts)
