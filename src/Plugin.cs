@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Collections;
 using nickeltin.SDF.Runtime;
+using System.Data.SqlTypes;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -27,6 +28,7 @@ using nickeltin.SDF.Runtime;
 /// 17. Add items to affect opponents
 /// 18. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
 /// 19. Give Boss Effects For All Characters!
+/// 20. Add Boss Effect Switch For Lobby Variable
 
 /// 11. Increase Boss Payout To if you won on first grid
 namespace CWMultiplayer
@@ -39,6 +41,7 @@ namespace CWMultiplayer
         public static ScorePacket currentRemainingTarget = new ScorePacket(0);
         public static EncounterController encounterController;
         public static EncounterSummaryDisplayController encounterSummaryDisplayController;
+        public static int MegMoney = 0;
         #endregion
 
         #region Melon Stuff
@@ -67,6 +70,8 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref BossDraftController __instance, ref BossDraftVisualController ____visualController)
             {
+                if(!ReceivedInfo.hasOpponent) return;
+
                 ____visualController.Select(true);
                 __instance.BossSelectButtonCallback();
             }
@@ -112,6 +117,8 @@ namespace CWMultiplayer
                 {
                     return;
                 }
+
+                MegMoney = 0;
 
                 encounterController = __instance;
                 encounterSummaryDisplayController = ____encounterSummaryDisplayController;
@@ -205,7 +212,6 @@ namespace CWMultiplayer
                                 GameStatics.GetPlayer().HasFacedUncursedBoss = true;
                             }
                         }
-                        MelonLogger.Msg("Deciding Who Won Between " + CursedNetworking.myPlayerPacket.highScore + " and " + ReceivedInfo.opponentHighscore);
                     }
                 }
                 catch (System.Exception e)
@@ -251,7 +257,6 @@ namespace CWMultiplayer
 
                         if(CursedNetworking.myPlayerPacket.health > 0)
                         {
-                            MelonLogger.Msg("You are continuing");
                             ____remainingTarget = new ScorePacket(-1);
                             
                             //Boss Money
@@ -287,6 +292,25 @@ namespace CWMultiplayer
                 await Task.Delay(10000);
                 
                 CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
+            }
+        }
+        //Boss Reward Increase To Make Up For Grids
+        [HarmonyPatch(typeof(Reward), MethodType.Constructor, new System.Type[] { typeof(string), typeof(int), typeof(bool), typeof(bool) })]
+        public static class IncreaseBossReward_Patch
+        {
+            public static void Prefix(ref string rewardDescription, ref int rewardCashAmount)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
+
+                if(rewardDescription == "Boss defeated!" && rewardCashAmount == 5)
+                {
+                    MelonLogger.Msg("Increasing Boss Payout");
+                    rewardCashAmount += GameStatics.GetPlayer().CurrentRunProgress.Ascension == AscensionLevel.OneFewerGrid ? 6 : 8;
+                }
+                else if(rewardDescription == "Boss defeated!")
+                {
+                    MelonLogger.Msg("Must've Missed Somethin'");
+                }
             }
         }
         #endregion
@@ -355,7 +379,9 @@ namespace CWMultiplayer
                         else MelonLogger.Msg("Option Is An Invalid Character");
                     }
 
-                    bossModifier.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
+                    if(bossModifier.GetType() != typeof(HumanBoyBoss))
+                        bossModifier.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
+
                     __result.AvailableBosses.Add(bossModifier);
                     __result.AvailableBosses.Add(bossModifier);
                 }
@@ -365,6 +391,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Skip Dialogue
         [HarmonyPatch(typeof(BossDraftController), "ShowSecretBossIntroDialogue")]
         public static class StopDialogue_Patch
@@ -389,6 +416,31 @@ namespace CWMultiplayer
                 }
             }
         }
+        [HarmonyPatch(typeof(CretaceousMegBoss), "GetSecretBossDefeatDialogue")]
+        public static class HeardItBefore_Patch
+        {
+            public static void Postfix(ref List<DiscussionPacket> __result)
+            {
+                __result = new List<DiscussionPacket>();
+            }
+        }
+        [HarmonyPatch(typeof(SandySaguaroBoss), "GetSecretBossDefeatDialogue")]
+        public static class QuietLikeTheWind_Patch
+        {
+            public static void Postfix(ref List<DiscussionPacket> __result)
+            {
+                __result = new List<DiscussionPacket>();
+            }
+        }
+        [HarmonyPatch(typeof(PrismaticBeanBoss), "GetSecretBossDefeatDialogue")]
+        public static class DontCare_Patch
+        {
+            public static void Postfix(ref List<DiscussionPacket> __result)
+            {
+                __result = new List<DiscussionPacket>();
+            }
+        }
+        
         //Stop Meg Shop
         [HarmonyPatch(typeof(RunProgress), "GoToNextNodeAndGetSceneName")]
         public static class DenyShoppingTrip_Patch
@@ -417,6 +469,15 @@ namespace CWMultiplayer
                 }
                 else
                     ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = Vector3.one;
+            }
+        }
+        //End Game Boss Unlock Override
+        [HarmonyPatch(typeof(SaveManager), "AddCharacterToUnlockedCharacters")]
+        public static class NoYouDidntUnlock_Patch
+        {
+            public static bool Prefix()
+            {
+                return ReceivedInfo.foeCharacter == null;
             }
         }
         #endregion
@@ -505,6 +566,8 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref List<BossModifier> bossModifiers)
             {
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+
                 if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
                 {
                     MelonLogger.Msg("Vs Nat");
@@ -531,9 +594,10 @@ namespace CWMultiplayer
         [HarmonyPatch(typeof(GridUtilitySingleton), "MakeStartOfGridBossAdjustments", new System.Type[] { typeof(GridData), typeof(List<BossModifier>), typeof(ChallengeRun), typeof(List<BoardGenVizInfo>), typeof(int), typeof(bool), typeof(bool)})]
         public static class BossGridModifiers_Patch
         {
-            public static void Prefix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps, ref GridUtilitySingleton __instance)
+            private static List<BossModifier> heldModifiers = new List<BossModifier>();
+            public static void Prefix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps)
             {
-                if(!ReceivedInfo.hasOpponent) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
                 //Rodman
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(RodmanBoss)))
@@ -552,6 +616,8 @@ namespace CWMultiplayer
                     }
                 }
 
+                //Nina In Scoring
+
                 //Hayley Bayles (Literally Just AddNumbers)
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(HayleyBaylesBoss)))
                 {
@@ -564,6 +630,8 @@ namespace CWMultiplayer
                     ChessPiece[] chessPieces = new ChessPiece[] { ChessPiece.Knight, ChessPiece.Bishop, ChessPiece.Rook, ChessPiece.Queen, ChessPiece.King};
                     SamGambitBoss.chessPiece = chessPieces[Random.Range(0, chessPieces.Length)];
                 }
+
+                //Bones In Scoring
 
                 //Octacles
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(OctaclesBoss)))
@@ -580,7 +648,6 @@ namespace CWMultiplayer
                         }
                     }
                     OctaclesBoss octaclesBoss = new OctaclesBoss();
-                    octaclesBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
                     for(int i = 0; i < octaclesBoss.FloorAdjustedModification; i++)
                     {
                         if(tileCoords.Count > 0)
@@ -601,15 +668,77 @@ namespace CWMultiplayer
                     }
                 }
 
-                //remove boss modifiers for custom boss effect guys
+                //Nat In Pre-Grid
+
+                //Vs Messages For Ones That Stay The Same
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SandySaguaroBoss)))
                 {
-                    
+                    MelonLogger.Msg("Vs Sandy");
+                }
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(HumanBoyBoss)))
+                {
+                    MelonLogger.Msg("Vs Human Boy");
+                }
+
+                //remove boss modifiers for custom boss effect guys
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
+                {
+                    heldModifiers.Add(bossModifiers.FirstOrDefault(modifier => modifier.GetType() == typeof(PrismaticBeanBoss)));
+                    bossModifiers.RemoveAll(modifier => modifier.GetType() == typeof(PrismaticBeanBoss));
                 }
             }
-            public static void Postfix(ref List<BossModifier> bossModifiers)
+            public static void Postfix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps)
             {
+                foreach(var modifier in heldModifiers)
+                {
+                    bossModifiers.Add(modifier);
+                }
+                heldModifiers.Clear();
+                
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
+                {
+                    MelonLogger.Msg("Vs Beans");
 
+                    List<Tile> list = new List<Tile>();
+                    List<Vector2Int> tileCoords = new List<Vector2Int>();
+
+                    //Color Cursed Tiles
+                    foreach (Tile tile in gridData.GetAvailableTiles())
+                    {
+                        if(tile.MyGlyphType != GlyphType.Letter)
+                        {
+                            tile.SetTileType(new TileType[] { TileType.Blue, TileType.Cactus, TileType.Glitch, TileType.Gold, TileType.Green, TileType.Pink, TileType.Purple, TileType.Red, TileType.Shiny, TileType.Void, TileType.White, TileType.Blue, TileType.Red, TileType.Shiny, TileType.Void }[Random.Range(0,15)]);
+                            list.Add(tile);
+                        }
+                    }
+
+                    //update the grid first time
+                    if (list.Count > 0)
+                    {
+                        BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(OctaclesBoss), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
+                        vizSteps.Add(item);
+                    }
+
+                    List<Tile> list2 = new List<Tile>();
+                    foreach (Tile tile in gridData.GetAvailableTiles())
+                    {
+                        if(tile.MyGlyphType != GlyphType.Letter && new TileType[] {TileType.Blue, TileType.Red, TileType.Shiny, TileType.Void}.Contains(tile.MyTileType))
+                        {
+                            tile.MyGlyphType = GlyphType.Letter;
+                            tile.SetLetter(Vocabulary.ActiveLanguageVocabulary.LanguageAlphabet.GetRandomConsonantWeighted());
+					        tile.SetGlyphType(GlyphType.Letter);
+
+                            list2.Add(tile);
+                        }
+                    }
+
+                    //update the grid second time
+                    if (list2.Count > 0)
+                    {
+                        BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list2, false, typeof(OctaclesBoss), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
+                        vizSteps.Add(item);
+                    }
+                }
             }
         }
         //Score
@@ -622,7 +751,6 @@ namespace CWMultiplayer
                 {
                     int resultCount = __result.Count;
                     __result.RemoveAll(item => GameStatics.GetPlayer().GetAllItems(false).Contains(item) && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()));
-                    if(resultCount == __result.Count) MelonLogger.Msg("Error: Didn't Remove Any Items");
                 }
             }
         }
@@ -631,7 +759,7 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref ScoreCalcVizInfo __result, ref BossModifier bossModifier, ref List<TileSelection> tiles)
             {
-                if(!ReceivedInfo.hasOpponent) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
                 if(bossModifier is NinaNixBoss)
                 {
@@ -684,14 +812,12 @@ namespace CWMultiplayer
                 {
                     if(encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
                     {
-                        MelonLogger.Msg("Searching Items");
                         foreach(ItemObject item in ____stickerObjects)
                         {
                             if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
                             {
                                 SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
                                 if(itemImage != null) itemImage.color = UnityEngine.Color.black;
-                                MelonLogger.Msg("Found Item: " + item.MyItem.Name);
                             }
                         }
                     }
@@ -723,15 +849,69 @@ namespace CWMultiplayer
                 }
             }
         }
+        //Meg's Income
+        [HarmonyPatch(typeof(EncounterController), "DisplayScoreSteps", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(List<Tile>)})]
+        public static class MegStonks_Patch
+        {
+            public static void Prefix(ref Dictionary<string, int> ____earningsBreakdown, ref EncounterController __instance, ref int ____totalGridsPerRound)
+            {
+                if(MegMoney > 0)
+                    ____earningsBreakdown["Meg's Finances"] = MegMoney;
+            }
+        }
+        //Remove Meg's Normal Ability
+        [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
+        public static class NoMoneyForYou_Patch
+        {
+            public static void Postfix(ref System.Type bossModifierType, ref bool __result)
+            {
+                if(bossModifierType == typeof(CretaceousMegBoss) && ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects)
+                {
+                    __result = false;
+                }
+            }
+        }
+        public static void SetMegMoney(int money)
+        {
+            if(money < 0) money = 100000;
+            GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.TotalCashEarned += money;
+            GameStatics.GetPlayer().ChangeMoney(money);
+            MegMoney += money;
+        }
+
+        //Descs For Bosses That Already Exist
+            #region Desc Overrides
+            [HarmonyPatch(typeof(CretaceousMegBoss), "GetDescription")]
+            public static class MegBossDesc_Patch
+            {
+                public static void Postfix(ref string __result)
+                {
+                    if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+
+                    __result = "For Each Highest WORD SCORE This Round, Meg Gets Money";
+                }
+            }
+            [HarmonyPatch(typeof(PrismaticBeanBoss), "GetDescription")]
+            public static class BeansBossDesc_Patch
+            {
+                public static void Postfix(ref string __result)
+                {
+                    if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+
+                    __result = "Colors All Cursed Tiles Randomly. Any Colored With Basic Colors Are Replaced With Consonants";
+                }
+            }
+            #endregion
         #endregion
     }
     public static class ReceivedInfo
     {
-        public static bool hasOpponent = true;
+        public static bool hasOpponent = false;
+        public static bool noBossEffects = false;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new NathaServo();
+        public static Character foeCharacter = null;
 
         public static void ResetInfo()
         {
@@ -851,6 +1031,14 @@ namespace CWMultiplayer
                 if(lobbyDataList[0] != myPlayerPacket.playerName)
                 {
                     ReceivedInfo.opponentIsInBoss = lobbyDataList[1] == "True";
+                    //Meg Boss Money
+                    if(highScoreLong > ReceivedInfo.opponentHighscore.Score && MultiplayerManager.encounterController != null && MultiplayerManager.encounterController.GetBossModifiers().Count(modifier => modifier.GetType() == typeof(CretaceousMegBoss)) > 0)
+                    {
+                        MelonLogger.Msg("Updating Meg Money");
+                        int money = (int)highScoreLong / (GameStatics.GetPlayer().CurrentRunProgress.GetStage() * GameStatics.GetPlayer().CurrentRunProgress.GetStage() * 50);
+                        MultiplayerManager.SetMegMoney(money);
+                    }
+
                     ReceivedInfo.opponentHighscore = new ScorePacket(highScoreLong);
                     ReceivedInfo.opponentHealth = health;
                     MelonLogger.Msg("Received Info: " + string.Join(" | ", lobbyDataList));
@@ -1937,8 +2125,7 @@ namespace CWMultiplayer
             return unavailableItemsList;
         }
     }
-    //Sandy Saguaro:
-    //Cretaceous Meg: 
-    //Beans: 
+    //Cretaceous Meg: "For Each Highest WORD SCORE This Round, Meg Gets Money"
+    //Beans: "Colors All Cursed Tiles Randomly. Any Colord With Basic Colors Get Replaced With Basic Tiles."
     #endregion
 }
