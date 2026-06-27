@@ -20,13 +20,14 @@ using AsmResolver.Shims;
 
 
 /// To do:
-/// 1. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 2. Add Boss Effect Switch For Lobby Variable
+/// 1. Disable Unlocks In Multiplayer
+/// 2. Fix All UI
 /// 
 /// OPTIONAL
-/// 3. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 4. Change HB's Ability?
-/// 5. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
+/// 3. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 4. Add wait before starting boss battle?
+/// 5. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 6. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
 
 
 namespace CWMultiplayer
@@ -256,8 +257,6 @@ namespace CWMultiplayer
                         {
                             if(debugMode) MelonLogger.Msg("Game Over! You lose!");
                             ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
-                            ReceivedInfo.ResetInfo();
-                            CursedNetworking.myPlayerPacket.ResetPacket();
                         }
 
                         ReceivedInfo.opponentHighscore = new ScorePacket(0);
@@ -277,6 +276,11 @@ namespace CWMultiplayer
             {
                 await Task.Delay(10000);
                 
+                if(CursedNetworking.myPlayerPacket.health <= 0)
+                {
+                    ReceivedInfo.ResetInfo();
+                    CursedNetworking.myPlayerPacket.ResetPacket();
+                }
                 CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
             }
         }
@@ -292,10 +296,6 @@ namespace CWMultiplayer
                     {
                         __result = true;
                         if(debugMode) MelonLogger.Msg("YOU WON! (Tell K2 If The Victory Screen Didn't Show Up)");
-                    }
-                    else
-                    {
-                        if(debugMode) MelonLogger.Msg("Foe Won");
                     }
                 }
             }
@@ -487,16 +487,6 @@ namespace CWMultiplayer
                 if(!ReceivedInfo.hasOpponent) return;
 
                 __result = new List<DiscussionPacket>();
-                
-                if(ReceivedInfo.noBossEffects) return;
-                
-                if (__instance.StolenItem != null)
-                {
-                    Debug.Log("returning item to player" + __instance.StolenItem.Name);
-                    GameStatics.GetPlayer().AddItemToInventory(__instance.StolenItem);
-                    CharacterInfoPanel.SingletonInventoryVisualController.PopulateAll();
-                    CharacterInfoPanel.SingletonInventoryVisualController.RefreshInspect();
-                }
             }
         }
         [HarmonyPatch(typeof(CretaceousMegBoss), "GetSecretBossDefeatDialogue")]
@@ -618,6 +608,28 @@ namespace CWMultiplayer
         }
         #endregion
         
+        #region Item Balancing
+        //Remove Weird Items From Pools
+        [HarmonyPatch(typeof(ItemPools), "PopulatePools")]
+        public static class PopulatePools_Patch
+        {
+            public static void Postfix(ref List<System.Type> ____stickerPool, ref List<System.Type> ____stampPool)
+            {
+                ____stickerPool.RemoveAll(item => item == typeof(DivingMask));
+                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies));
+            }
+        }
+        //Nerf Cursed VHS
+        [HarmonyPatch(typeof(CursedVHS), MethodType.Constructor)]
+        public static class PerfectlyBalancedAsAllThingsShouldBe_Patch
+        {
+            public static void Postfix(ref ItemRarity ___Rarity, ref CursedVHS __instance)
+            {
+                ___Rarity = ItemRarity.Legendary;
+            }
+        }
+        #endregion
+
         #region Other Stuff
         //Remove Puzzle Button
         [HarmonyPatch(typeof(SaveManager), "HasAcquiredAllFairies")]
@@ -629,23 +641,14 @@ namespace CWMultiplayer
             }
         }
 
-        //Remove Weird Items From Pools
-        [HarmonyPatch(typeof(ItemPools), "PopulatePools")]
-        public static class PopulatePools_Patch
-        {
-            public static void Postfix(ref List<System.Type> ____stickerPool, ref List<System.Type> ____stampPool)
-            {
-                ____stickerPool.RemoveAll(item => item == typeof(DivingMask));
-                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies));
-            }
-        }
-
         //Remove Continue Button
         [HarmonyPatch(typeof(SaveManager), "GetCurrentRun")]
         public static class NoContinuesForYou_Patch
         {
             public static void Postfix(ref Player __result)
             {
+                if(ReceivedInfo.hasOpponent && CursedUI.lobbyID == CSteamID.Nil) return; //Test For Hard Coded Made Easier
+
                 if(ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name == SceneNames.MainMenuSceneName)
                 {
                     __result = null;
@@ -691,7 +694,7 @@ namespace CWMultiplayer
             CursedUI.ToggleOverlay(SceneManager.GetActiveScene().name == SceneNames.EncounterSceneName && ReceivedInfo.hasOpponent);
             CursedUI.showLobbyButtonObj.SetActive(SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName));
 
-            if(!new string[] { SceneNames.EncounterSceneName, SceneNames.ShopSceneName }.Contains(SceneManager.GetActiveScene().name))
+            if(!new string[] { SceneNames.EncounterSceneName, SceneNames.ShopSceneName, SceneNames.BossDraftSceneName, SceneNames.BossRewardSceneName }.Contains(SceneManager.GetActiveScene().name))
             {
                 CursedNetworking.myPlayerPacket.health = 3;
                 CursedNetworking.myPlayerPacket.highScore = new ScorePacket(0);
@@ -716,6 +719,52 @@ namespace CWMultiplayer
         #endregion
 
         #region Boss Effects
+        //Start And End
+        private static bool isDowngraded = false;
+        [HarmonyPatch(typeof(EncounterController), "SetTotalTarget", new System.Type[] { typeof(int) })]
+        public static class HumanHitsYou_Patch
+        {
+            public static void Postfix()
+            {
+                if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(HumanBoyBoss)))
+                {
+                    if(isDowngraded) return;
+
+                    if(debugMode) MelonLogger.Msg("Vs Human Boy");
+                    
+                    isDowngraded = true;
+
+                    foreach (Item item in GameStatics.GetPlayer().GetAllItems())
+                    {
+                        if(item.UpgradeableComponents.Count == 1)
+                        {
+                            item.Downgrade(0);
+                        }
+                    }
+                }
+			    CharacterInfoPanel.SingletonInventoryVisualController.PopulateStickers();
+            }
+        }
+        [HarmonyPatch(typeof(PinDraftVisualController), "Populate")]
+        public static class YouHitHimBack_Patch
+        {
+            public static void Prefix()
+            {
+                if(isDowngraded)
+                {
+                    isDowngraded = false;
+
+                    foreach (Item item in GameStatics.GetPlayer().GetAllItems())
+                    {
+                        if(item.UpgradeableComponents.Count == 1)
+                        {
+                            item.Upgrade(0);
+                        }
+                    }
+			        CharacterInfoPanel.SingletonInventoryVisualController.PopulateStickers();
+                }
+            }
+        }
         //Grid
         [HarmonyPatch(typeof(EncounterController), "ShowGridGenerationViz", new System.Type[] { typeof(List<BoardGenVizInfo>) })]
         public static class EnsureItGetsDoneFirst_Patch
@@ -801,7 +850,9 @@ namespace CWMultiplayer
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(RodmanBoss)))
                 {
                     if(debugMode) MelonLogger.Msg("Vs Rodman");
+
                     List<Tile> list = new List<Tile>();
+                    //Tile Color
                     foreach (Tile tile in gridData.GetAvailableTiles())
                     {
                         tile.SetTileType(new TileType[] { TileType.Red, TileType.Blue, TileType.Normal }[Random.Range(0,3)]);
@@ -811,6 +862,33 @@ namespace CWMultiplayer
                     {
                         BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(ExtraQs), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
                         vizSteps.Add(item);
+                    }
+
+                    list = new List<Tile>();
+                    //Tile Score
+                    foreach (Tile tile in gridData.GetAvailableTiles())
+                    {
+                        List<Tile> tilesAdjacentToCoordinates = GridUtility.Singleton.GetTilesAdjacentToCoordinates(gridData, tile.Coordinates, false);
+                        List<TileType> list2 = new List<TileType>();
+                        foreach (Tile tile2 in tilesAdjacentToCoordinates)
+                        {
+                            TileType tileType = tile2.GetTileType();
+                            if (tileType == TileType.Blue || tileType == TileType.Red)
+                            {
+                                list2.Add(tileType);
+                            }
+                        }
+                        if (list2.Count > 0)
+                        {
+                            RodmanBoss rodmanBoss = new RodmanBoss();
+                            rodmanBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                            tile.ValueModifier -= (long)(rodmanBoss.FloorAdjustedModification * list2.Count);
+                            list.Add(tile);
+                        }
+                    }
+                    if (list.Count > 0)
+                    {
+                        vizSteps.Add(new BoardGenVizInfo(gridData, null, list, false, null, false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles));
                     }
                 }
 
@@ -929,6 +1007,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Score
         [HarmonyPatch(typeof(EncounterController), "GetItemsForWordSubmission", new System.Type[] { typeof(List<TileSelection>), typeof(bool) })]
         public static class NatCaughtRedHanded_Patch
@@ -968,6 +1047,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Sam Gambit's Gambit
         [HarmonyPatch(typeof(GridUtilitySingleton), "GetValidNextTiles", new System.Type[] { typeof(GridData), typeof(List<Tile>), typeof(TileSelectionManager), typeof(bool) })]
         public static class TheGambit_Patch
@@ -1005,6 +1085,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Nat's Thievery
         [HarmonyPatch(typeof(InventoryVisualController), "PopulateStickers")]
         public static class NatTakesStickers_Patch
@@ -1046,8 +1127,12 @@ namespace CWMultiplayer
                         {
                             if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
                             {
-                                SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
-                                if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                SDFImage[] itemImages = item.GetComponentsInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                foreach (SDFImage itemImage in itemImages)
+                                {
+                                    if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                }
+
                                 if(debugMode) MelonLogger.Msg("Found Item: " + item.MyItem.Name);
                             }
                         }
@@ -1055,6 +1140,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Meg's Income
         [HarmonyPatch(typeof(EncounterController), "DisplayScoreSteps", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(List<Tile>)})]
         public static class MegStonks_Patch
@@ -1068,6 +1154,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Remove Meg's Normal Ability
         [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
         public static class NoMoneyForYou_Patch
@@ -1094,7 +1181,7 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref Item __result)
             {
-                if(ReceivedInfo.noBossEffects) __result = null;
+                if(ReceivedInfo.hasOpponent) __result = null;
             }
         }
 
@@ -1108,6 +1195,16 @@ namespace CWMultiplayer
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
                     __result = "For Each Highest WORD SCORE This Round, Meg Gets Money";
+                }
+            }
+            [HarmonyPatch(typeof(HumanBoyBoss), "GetDescription")]
+            public static class HumanBoyDesc_Patch
+            {
+                public static void Postfix(ref string __result)
+                {
+                    if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+
+                    __result = "Decreases All Stickers By 1 Level For The Fight (Minimum Level 1)";
                 }
             }
             [HarmonyPatch(typeof(PrismaticBeanBoss), "GetDescription")]
@@ -1126,11 +1223,11 @@ namespace CWMultiplayer
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = false;
+        public static bool hasOpponent = true;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = null;
+        public static Character foeCharacter = new SockHead();
 
         public static void ResetInfo()
         {
@@ -1838,8 +1935,6 @@ namespace CWMultiplayer
                 SteamMatchmaking.LeaveLobby(lobbyID);
                 lobbyID = CSteamID.Nil;
                 lobbyName = "";
-                ReceivedInfo.ResetInfo();
-                CursedNetworking.myPlayerPacket.ResetPacket();
             }
             CursedNetworking.isHost = false;
         }
@@ -2011,6 +2106,8 @@ namespace CWMultiplayer
                 if(myHearts == -1) myHearts = CursedNetworking.myPlayerPacket.health;
                 if(foeHearts == -1) foeHearts = ReceivedInfo.opponentHealth;
 
+                if(MultiplayerManager.debugMode) MelonLogger.Msg("Health: " + myHearts + " | " + foeHearts);
+
                 string myText = "";
                 string foeText = "♥︎♥︎♥︎";
                 switch(myHearts)
@@ -2065,13 +2162,14 @@ namespace CWMultiplayer
             this.AudioPrefix = "Rodman";
             this.SpriteFileName = new WetDennis().GetArtFileName();
             this.UIColor = new WetDennis().GetUIColorA();
-            this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
+            this.DifficultyModifier = new List<int> { 1, 5, 10, 15, 20, 69696969 };
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.CanBeSummonedByMichael = false;
         }
         public override string GetDescription()
         {
-            return "Trichromatic: All Tiles Are Randomized To Be Red, Blue, Or Normal";
+            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return "All Tiles Are Randomized To Be Red, Blue, Or Normal, Tiles Adjacent To Red Or Blue Tiles Get -" + FloorAdjustedModification + " Base Tile Score";
         }
         public override Sprite GetBossSprite()
         {
@@ -2350,6 +2448,7 @@ namespace CWMultiplayer
         }
     }
     //Cretaceous Meg: "For Each Highest WORD SCORE This Round, Meg Gets Money"
+    //Human Boy: "Decreases All Sticker Levels By 1 (Minimum Level 1)"
     //Beans: "Colors All Cursed Tiles Randomly. Any Colord With Basic Colors Get Replaced With Basic Tiles."
     #endregion
 }
