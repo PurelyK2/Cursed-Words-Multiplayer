@@ -55,7 +55,7 @@ namespace CWMultiplayer
             if(CursedUI.lobbyName != "")
             {
                 SteamMatchmaking.LeaveLobby(CursedUI.lobbyID);
-                CursedUI.lobbyName = "";
+                if(debugMode) MelonLogger.Msg("Disconnected from lobby");
             }
             if(debugMode) MelonLogger.Msg("Shut Down Multiplayer Mod");
         }
