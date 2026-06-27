@@ -1947,7 +1947,7 @@ namespace CWMultiplayer
             if(CursedNetworking.isHost) return;
             if(MultiplayerManager.debugMode) MelonLogger.Msg("Joined Lobby");
 
-            if(SteamMatchmaking.GetNumLobbyMembers((CSteamID)callback.m_ulSteamIDLobby) == 1)
+            if(SteamMatchmaking.GetNumLobbyMembers((CSteamID)callback.m_ulSteamIDLobby) <= 2)
             {
                 CursedNetworking.myPlayerPacket.playerName = "Player 2";
                 if(MultiplayerManager.debugMode) MelonLogger.Msg("You Are Player 2");
