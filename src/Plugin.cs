@@ -22,12 +22,13 @@ using AsmResolver.Shims;
 /// To do:
 /// 1. Disable Unlocks In Multiplayer
 /// 2. Fix All UI
+/// 3. Fix High Ping Bugs
 /// 
 /// OPTIONAL
-/// 3. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 4. Add wait before starting boss battle?
-/// 5. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 6. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
+/// 4. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 5. Add wait before starting boss battle?
+/// 6. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 7. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
 
 
 namespace CWMultiplayer
@@ -736,7 +737,7 @@ namespace CWMultiplayer
 
                     foreach (Item item in GameStatics.GetPlayer().GetAllItems())
                     {
-                        if(item.UpgradeableComponents.Count == 1)
+                        if(item.UpgradeableComponents.Count == 1 && item.UpgradeableComponents[0].Level > 0)
                         {
                             item.Downgrade(0);
                         }
@@ -761,8 +762,8 @@ namespace CWMultiplayer
                             item.Upgrade(0);
                         }
                     }
-			        CharacterInfoPanel.SingletonInventoryVisualController.PopulateStickers();
                 }
+			    CharacterInfoPanel.SingletonInventoryVisualController.PopulateAll();
             }
         }
         //Grid
@@ -1227,7 +1228,7 @@ namespace CWMultiplayer
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new SockHead();
+        public static Character foeCharacter = new NathaServo();
 
         public static void ResetInfo()
         {
