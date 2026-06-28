@@ -600,8 +600,6 @@ namespace CWMultiplayer
 
             public static void MakeAnimatedButton(GameObject baseButton)
             {
-                try
-                {
                 Canvas canvas = Object.FindFirstObjectByType<Canvas>();
                 Button[] selectButtons = Object.FindObjectsOfType<Button>().Where(button => button.GetComponentInChildren<TextMeshProUGUI>().text == "SELECT").ToArray<Button>();
                 GameObject selectButton = selectButtons[selectButtons.Count() - 1].transform.parent.gameObject;
@@ -666,16 +664,6 @@ namespace CWMultiplayer
                 {
                     baseButton.GetComponent<RectTransform>().localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 13 / 32, 0);
                     baseButton.GetComponent<RectTransform>().localScale = new Vector2(0.75f, 0.75f);
-                }
-                else if(baseButton.name == "Back Button")
-                {
-                    thisText.autoSizeTextContainer = false;
-                    thisText.fontSize = selectButton.GetComponent<TextMeshProUGUI>().fontSize;
-                }
-                }
-                catch(System.Exception e)
-                {
-                    MelonLogger.Msg(e + "\n" + baseButton.name);
                 }
             }
             public static void FixOtherUISTuff(GameObject baseThingy)
