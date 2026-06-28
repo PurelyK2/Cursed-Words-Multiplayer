@@ -577,17 +577,31 @@ namespace CWMultiplayer
 
         //Button And Such Appearances
         [HarmonyPatch(typeof(SaveSlotController), "Awake")]
-        public static class PressingButtons_Patch
+        public static class LobbyUISetup_Patch
         {
             static void Postfix(SaveSlotController __instance)
             {
                 if(CursedUI.showLobbyButtonObj.GetComponentsInChildren<Component>().ToList().Exists(component => component.GetType() == typeof(EventTrigger))) return;
-                MakeAnimatedButton(CursedUI.showLobbyButtonObj);
-                MakeAnimatedButton(CursedUI.hideLobbyButtonObj);
+                try
+                {
+                    MakeAnimatedButton(CursedUI.showLobbyButtonObj);
+                    MakeAnimatedButton(CursedUI.hideLobbyButtonObj);
+                    MakeAnimatedButton(CursedUI.backButtonObj);
+                    MakeAnimatedButton(CursedUI.hostButtonObj);
+                    MakeAnimatedButton(CursedUI.lobbyButtonObj);
+                    MakeAnimatedButton(CursedUI.joinLobbyButtonObj);
+                    FixOtherUISTuff(CursedUI.canvasObj);
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
             }
 
             public static void MakeAnimatedButton(GameObject baseButton)
             {
+                try
+                {
                 Canvas canvas = Object.FindFirstObjectByType<Canvas>();
                 Button[] selectButtons = Object.FindObjectsOfType<Button>().Where(button => button.GetComponentInChildren<TextMeshProUGUI>().text == "SELECT").ToArray<Button>();
                 GameObject selectButton = selectButtons[selectButtons.Count() - 1].transform.parent.gameObject;
@@ -648,21 +662,36 @@ namespace CWMultiplayer
                 thisButtonTop.transform.SetAsFirstSibling();
                 thisButtonBG.transform.SetAsFirstSibling();
 
-                MelonLogger.Msg(thisButtonTop.transform.parent.name);
+                if(baseButton.name.Contains("Lobby Button") && (baseButton.name.Contains("Show") || baseButton.name.Contains("Hide")))
+                {
+                    baseButton.GetComponent<RectTransform>().localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 13 / 32, 0);
+                    baseButton.GetComponent<RectTransform>().localScale = new Vector2(0.75f, 0.75f);
+                }
+                else if(baseButton.name == "Back Button")
+                {
+                    thisText.autoSizeTextContainer = false;
+                    thisText.fontSize = selectButton.GetComponent<TextMeshProUGUI>().fontSize;
+                }
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e + "\n" + baseButton.name);
+                }
+            }
+            public static void FixOtherUISTuff(GameObject baseThingy)
+            {
+                //Basics
+                Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+                Button[] selectButtons = Object.FindObjectsOfType<Button>().Where(button => button.GetComponentInChildren<TextMeshProUGUI>().text == "SELECT").ToArray();
+                GameObject selectButton = selectButtons[selectButtons.Count() - 1].transform.parent.gameObject;
 
-/*
-ButtonBG(Clone) (UnityEngine.RectTransform)
-ButtonBG(Clone) (UnityEngine.CanvasRenderer)
-ButtonBG(Clone) (UnityEngine.UI.Image)
-ButtonTop (UnityEngine.RectTransform)
-ButtonTop (UnityEngine.CanvasRenderer)
-ButtonTop (UnityEngine.UI.Image)
-ButtonTop (UnityEngine.UI.Button)
-ButtonTop (UnityEngine.EventSystems.EventTrigger)
-SELECT (UnityEngine.RectTransform)
-SELECT (UnityEngine.CanvasRenderer)
-SELECT (TMPro.TextMeshProUGUI)
-*/
+                //Font
+                TextMeshProUGUI[] areaTexts = baseThingy.GetComponentsInChildren<TextMeshProUGUI>();
+                foreach (TextMeshProUGUI areaText in areaTexts)
+                {
+                    areaText.font = selectButton.GetComponentInChildren<TextMeshProUGUI>().font;
+                    areaText.color = selectButton.GetComponentInChildren<TextMeshProUGUI>().color;
+                }
             }
         }
         #endregion
@@ -826,7 +855,7 @@ SELECT (TMPro.TextMeshProUGUI)
 
                     foreach (Item item in GameStatics.GetPlayer().GetAllItems())
                     {
-                        if(item.UpgradeableComponents.Count == 1 && item.UpgradeableComponents[0].Level > 0)
+                        if(item.UpgradeableComponents.Count == 1 && item.UpgradeableComponents[0].Level > 1)
                         {
                             item.Downgrade(0);
                         }
@@ -1493,33 +1522,33 @@ SELECT (TMPro.TextMeshProUGUI)
     {
         #region GameObjects
         public static GameObject canvasObj = new GameObject("Canvas", new System.Type[] { typeof(Canvas), typeof(RectTransform), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(CursedUI), typeof(UnityEngine.UI.Image) });
-        private static GameObject eventSystemObj = new GameObject("EventSystem", new System.Type[] { typeof(Transform), typeof(EventSystem), typeof(InputSystemUIInputModule), typeof(CursedUI) });
-        private static GameObject lobbyMenuObj = new GameObject("Lobbies Menu", new System.Type[] { typeof(RectTransform), typeof(CursedUI) });
-        private static GameObject scrollViewObj = new GameObject("Scorll View", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
+        public  static GameObject eventSystemObj = new GameObject("EventSystem", new System.Type[] { typeof(Transform), typeof(EventSystem), typeof(InputSystemUIInputModule), typeof(CursedUI) });
+        public  static GameObject lobbyMenuObj = new GameObject("Lobbies Menu", new System.Type[] { typeof(RectTransform), typeof(CursedUI) });
+        public  static GameObject scrollViewObj = new GameObject("Scorll View", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
         public static GameObject showLobbyButtonObj = new GameObject("Show Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         public static GameObject hideLobbyButtonObj = new GameObject("Hide Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject hostButtonObj = new GameObject("Host Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject lobbyIDObj = new GameObject("Lobby ID", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject lobbyIDBackgroundObj = new GameObject("Lobby ID Background", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
-        private static GameObject lobbyButtonObj = new GameObject("Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject lobbyNameInputFieldObj = new GameObject("Lobby Name Input Field", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(TMP_InputField), typeof(CursedUI) });
-        private static GameObject inputFieldTextObj = new GameObject("Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject inputFieldPlaceholderObj = new GameObject("Placeholder", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject joinLobbyButtonObj = new GameObject("Join Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject backButtonObj = new GameObject("Back Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static List<GameObject> lobbyObjects = new List<GameObject> { canvasObj, eventSystemObj, showLobbyButtonObj, hideLobbyButtonObj, hostButtonObj, lobbyIDObj, lobbyButtonObj, lobbyMenuObj, backButtonObj, lobbyNameInputFieldObj, joinLobbyButtonObj, lobbyIDBackgroundObj };
-        
+        public  static GameObject hostButtonObj = new GameObject("Host Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public  static GameObject lobbyIDObj = new GameObject("Lobby ID", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject lobbyIDBackgroundObj = new GameObject("Lobby ID Background", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
+        public  static GameObject lobbyButtonObj = new GameObject("Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public  static GameObject lobbyNameInputFieldObj = new GameObject("Lobby Name Input Field", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(TMP_InputField), typeof(CursedUI) });
+        public  static GameObject inputFieldTextObj = new GameObject("Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject inputFieldPlaceholderObj = new GameObject("Placeholder", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject joinLobbyButtonObj = new GameObject("Join Lobby Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public  static GameObject backButtonObj = new GameObject("Back Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public  static List<GameObject> lobbyObjects = new List<GameObject> { canvasObj, eventSystemObj, showLobbyButtonObj, hideLobbyButtonObj, hostButtonObj, lobbyIDObj, lobbyButtonObj, lobbyMenuObj, backButtonObj, lobbyNameInputFieldObj, joinLobbyButtonObj, lobbyIDBackgroundObj };
+
         public static GameObject waitingTextObj = new GameObject("Waiting Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         public static GameObject menuButtonCoverObj = new GameObject("Menu Cover", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
         public static GameObject bossEffectsToggleObj = new GameObject("Boss Effects Toggle", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(CursedUI) });
-        private static GameObject noBossEffectsTextObj = new GameObject("Boss Effects Toggle Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI), typeof(UnityEngine.UI.Outline) });
+        public  static GameObject noBossEffectsTextObj = new GameObject("Boss Effects Toggle Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI), typeof(UnityEngine.UI.Outline) });
 
-        private static GameObject showLobbyButtonTextObj = new GameObject("Show Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject hideLobbyButtonTextObj = new GameObject("Hide Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject hostLobbyButtonTextObj = new GameObject("Host Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject lobbyButtonTextObj = new GameObject("Lobby Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject joinLobbyButtonTextObj = new GameObject("Join Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
-        private static GameObject backLobbyButtonTextObj = new GameObject("Back Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject showLobbyButtonTextObj = new GameObject("Show Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject hideLobbyButtonTextObj = new GameObject("Hide Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject hostLobbyButtonTextObj = new GameObject("Host Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject lobbyButtonTextObj = new GameObject("Lobby Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject joinLobbyButtonTextObj = new GameObject("Join Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
+        public  static GameObject backLobbyButtonTextObj = new GameObject("Back Text", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         #endregion
         #region Steam Callbacks
         public static Callback<LobbyMatchList_t> m_lobbyMatchList;
@@ -1618,7 +1647,7 @@ SELECT (TMPro.TextMeshProUGUI)
                 if(lobbyIDText != null)
                 {
                     lobbyIDText.color = new Color32(255, 255, 255, 255); 
-                    lobbyIDText.fontSize = 100;
+                    lobbyIDText.fontSize = 80;
                     lobbyIDText.alignment = TextAlignmentOptions.Center;
                 }
             RectTransform lobbyIDBackgroundRect = lobbyIDBackgroundObj.GetComponent<RectTransform>();
@@ -1641,7 +1670,7 @@ SELECT (TMPro.TextMeshProUGUI)
                 TextMeshProUGUI waitingText = waitingTextObj.GetComponent<TextMeshProUGUI>();
                 if(waitingText != null)
                 {
-                    waitingText.text = "Waiting For Opponent...";
+                    waitingText.text = "WAITING FOR OPPONENT...";
                     waitingText.autoSizeTextContainer = true;
                     waitingText.alignment = TextAlignmentOptions.Center;
                 }
@@ -1650,48 +1679,48 @@ SELECT (TMPro.TextMeshProUGUI)
             TextMeshProUGUI showLobbyButtonText = showLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(showLobbyButtonText != null)
             {
-                showLobbyButtonText.text = "OPEN";
+                showLobbyButtonText.text = "LOBBY";
                 showLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hideLobbyButtonText = hideLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(hideLobbyButtonText != null)
             {
-                hideLobbyButtonText.text = "CLOSE";
+                hideLobbyButtonText.text = "LOBBY";
                 hideLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hostLobbyButtonText = hostLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(hostLobbyButtonText != null)
             {
-                hostLobbyButtonText.text = "Host Lobby";
-                hostLobbyButtonText.fontSize = 100;
+                hostLobbyButtonText.text = "HOST LOBBY";
+                hostLobbyButtonText.fontSize = 80;
                 hostLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI lobbyButtonText = lobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(lobbyButtonText != null)
             {
-                lobbyButtonText.text = "Find Lobby";
-                lobbyButtonText.fontSize = 100;
+                lobbyButtonText.text = "FIND LOBBY";
+                lobbyButtonText.fontSize = 85;
                 lobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI joinLobbyButtonText = joinLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(joinLobbyButtonText != null)
             {
-                joinLobbyButtonText.text = "Join";
+                joinLobbyButtonText.text = "JOIN";
                 joinLobbyButtonText.fontSize = 75;
                 joinLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI backLobbyButtonText = backLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(backLobbyButtonText != null)
             {
-                backLobbyButtonText.text = "Leave";
-                backLobbyButtonText.fontSize = 50;
+                backLobbyButtonText.text = "LEAVE";
+                backLobbyButtonText.fontSize = 40;
                 backLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             
             TextMeshProUGUI overrideWaitingButtonText = overrideWaitingButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(overrideWaitingButtonText != null)
             {
-                overrideWaitingButtonText.text = "Override";
+                overrideWaitingButtonText.text = "OVERRIDE";
                 overrideWaitingButtonText.color = Color.black;
                 overrideWaitingButtonText.fontSize = 14;
                 overrideWaitingButtonText.alignment = TextAlignmentOptions.Center;
@@ -1700,13 +1729,13 @@ SELECT (TMPro.TextMeshProUGUI)
             RectTransform noBossEffectsTextRect = noBossEffectsTextObj.GetComponent<RectTransform>();
             if(noBossEffectsTextRect != null)
             {
-                noBossEffectsTextRect.localPosition = new Vector3(-150, 0, 0);
+                noBossEffectsTextRect.localPosition = new Vector3(-175, 0, 0);
                 noBossEffectsTextRect.sizeDelta = new Vector3(500, 50);
             }
                 TextMeshProUGUI noBossEffectsText = noBossEffectsTextObj.GetComponent<TextMeshProUGUI>();
                 if(noBossEffectsText != null)
                 {
-                    noBossEffectsText.text = "Boss Effects: ";
+                    noBossEffectsText.text = "BOSS EFFECTS: ";
                     noBossEffectsText.color = Color.black;
                     noBossEffectsText.autoSizeTextContainer = true;
                     noBossEffectsText.alignment = TextAlignmentOptions.Center;
@@ -1739,7 +1768,7 @@ SELECT (TMPro.TextMeshProUGUI)
                 RectTransform hostTextRect = hostLobbyButtonTextObj.GetComponent<RectTransform>();
                 if(hostTextRect != null)
                 {
-                    hostTextRect.sizeDelta = new Vector2(600, 150);
+                    hostTextRect.sizeDelta = new Vector2(500, 150);
                 }
             RectTransform lobbyButtonRect = lobbyButtonObj.GetComponent<RectTransform>();
             if(lobbyButtonRect != null)
@@ -1778,7 +1807,7 @@ SELECT (TMPro.TextMeshProUGUI)
             if(joinButtonRect != null)
             {
                 joinButtonRect.localPosition = new Vector3(0, -150, 0);
-                joinButtonRect.sizeDelta = new Vector2(400, 100);
+                joinButtonRect.sizeDelta = new Vector2(250, 100);
             }
                 UnityEngine.UI.Image joinButtonImage = joinLobbyButtonObj.GetComponent<UnityEngine.UI.Image>();
                 if(joinButtonImage != null)
@@ -1788,7 +1817,7 @@ SELECT (TMPro.TextMeshProUGUI)
                 TextMeshProUGUI joinButtonText = joinLobbyButtonObj.GetComponent<TextMeshProUGUI>();
                 if(joinButtonText != null)
                 {
-                    joinButtonText.text = "Join Lobby";
+                    joinButtonText.text = "JOIN LOBBY";
                     joinButtonText.color = new UnityEngine.Color(1, 1, 1, 1);
                     joinButtonText.alignment = TextAlignmentOptions.Center;
                 }
@@ -1872,10 +1901,10 @@ SELECT (TMPro.TextMeshProUGUI)
                 TextMeshProUGUI placeholder = inputFieldPlaceholderObj.GetComponent<TextMeshProUGUI>();
                 if(placeholder != null)
                 {
-                    placeholder.text = "Enter Lobby ID";
+                    placeholder.text = "ENTER LOBBY ID";
                     placeholder.color = new UnityEngine.Color(0.7f, 0.7f, 0.7f, 0.5f);
                     placeholder.alignment = TextAlignmentOptions.Center;
-                    placeholder.fontSize = 100;
+                    placeholder.fontSize = 80;
                 }
                 
                 // Setup input field properties
@@ -1984,7 +2013,8 @@ SELECT (TMPro.TextMeshProUGUI)
                 return;
             }
 
-            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Waiting...";
+            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "WAITING...";
+            
             foreach(var thisObject in lobbyObjects)
             {
                 thisObject.SetActive(!new List<GameObject>{ showLobbyButtonObj, backButtonObj, lobbyNameInputFieldObj, lobbyIDBackgroundObj }.Contains(thisObject));
@@ -2008,7 +2038,7 @@ SELECT (TMPro.TextMeshProUGUI)
             {
                 thisObject.SetActive(!new List<GameObject> { backButtonObj, showLobbyButtonObj, lobbyNameInputFieldObj, lobbyIDBackgroundObj }.Contains(thisObject));
             }
-            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Waiting...";
+            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "WAITING...";
             if(lobbyName != "")
             {
                 SteamMatchmaking.LeaveLobby(lobbyID);
@@ -2112,9 +2142,9 @@ SELECT (TMPro.TextMeshProUGUI)
             }
             if(MultiplayerManager.debugMode) MelonLogger.Msg("Failed To Get A Lobby To Join");
             if(inputLobbyCode == "")
-                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "No Lobby Found";
+                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "NO LOBBY FOUND";
             else
-                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby Not Found";
+                lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "LOBBY NOT FOUND";
         }
         void OnLobbyEnter(LobbyEnter_t callback)
         {
@@ -2139,7 +2169,7 @@ SELECT (TMPro.TextMeshProUGUI)
             }
             lobbyID = (CSteamID)callback.m_ulSteamIDLobby;
             lobbyName = ((ulong)lobbyID % 10000).ToString("D4");
-            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby ID: " + lobbyName;
+            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "LOBBY ID: " + lobbyName;
         }
         void OnLobbyCreated(LobbyCreated_t callback)
         {
@@ -2151,7 +2181,7 @@ SELECT (TMPro.TextMeshProUGUI)
 
             lobbyID = (CSteamID)callback.m_ulSteamIDLobby;
             lobbyName = ((ulong)lobbyID % 10000).ToString("D4");
-            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "Lobby ID: " + lobbyName;
+            lobbyIDObj.GetComponent<TextMeshProUGUI>().text = "LOBBY ID: " + lobbyName;
             
             if(MultiplayerManager.debugMode) MelonLogger.Msg("Lobby Created: " + lobbyID);
         }
