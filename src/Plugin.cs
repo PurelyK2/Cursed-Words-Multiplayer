@@ -628,8 +628,15 @@ namespace CWMultiplayer
 		            PersistentSound.SingletonSoundController.ButtonRelease();
                 });
                 thisButtonTop.GetComponent<EventTrigger>().triggers.Add(pointerUpEntry);
-                baseButton.GetComponentInChildren<TextMeshProUGUI>().transform.SetParent(thisButtonTop.transform);
                 
+                
+                TextMeshProUGUI thisText = baseButton.GetComponentInChildren<TextMeshProUGUI>();
+                thisText.transform.SetParent(thisButtonTop.transform);
+                thisText.font = selectButton.GetComponentInChildren<TextMeshProUGUI>().font;
+                thisText.fontWeight = FontWeight.ExtraLight;
+                thisText.color = selectButton.GetComponentInChildren<TextMeshProUGUI>().color;
+                thisText.autoSizeTextContainer = true;
+
                 GameObject thisButtonBG = new GameObject("ButtonTop", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
                 thisButtonBG.transform.SetParent(baseButton.transform);
                 thisButtonBG.GetComponent<RectTransform>().localPosition = Vector3.down * 16f;
@@ -774,7 +781,8 @@ SELECT (TMPro.TextMeshProUGUI)
 
             //Overlay Stuff
             CursedUI.ToggleOverlay(SceneManager.GetActiveScene().name == SceneNames.EncounterSceneName && ReceivedInfo.hasOpponent);
-            CursedUI.showLobbyButtonObj.SetActive((SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName)) && SceneManager.GetActiveScene().name != "PreRoll");
+            CursedUI.showLobbyButtonObj.SetActive((SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName)) && SceneManager.GetActiveScene().name != "PreRoll" && !CursedUI.isUIOpen);
+
 
             if(!new string[] { SceneNames.EncounterSceneName, SceneNames.ShopSceneName, SceneNames.BossDraftSceneName, SceneNames.BossRewardSceneName }.Contains(SceneManager.GetActiveScene().name))
             {
@@ -808,7 +816,7 @@ SELECT (TMPro.TextMeshProUGUI)
         {
             public static void Postfix()
             {
-                if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(HumanBoyBoss)))
+                if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(HumanBoyBoss)) && !ReceivedInfo.noBossEffects)
                 {
                     if(isDowngraded) return;
 
@@ -1305,11 +1313,11 @@ SELECT (TMPro.TextMeshProUGUI)
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = true;
+        public static bool hasOpponent = false;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new NathaServo();
+        public static Character foeCharacter = null;
 
         public static void ResetInfo()
         {
@@ -1642,15 +1650,13 @@ SELECT (TMPro.TextMeshProUGUI)
             TextMeshProUGUI showLobbyButtonText = showLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(showLobbyButtonText != null)
             {
-                showLobbyButtonText.text = "Open";
-                showLobbyButtonText.fontSize = 50;
+                showLobbyButtonText.text = "OPEN";
                 showLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hideLobbyButtonText = hideLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(hideLobbyButtonText != null)
             {
-                hideLobbyButtonText.text = "Close";
-                hideLobbyButtonText.fontSize = 50;
+                hideLobbyButtonText.text = "CLOSE";
                 hideLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hostLobbyButtonText = hostLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
