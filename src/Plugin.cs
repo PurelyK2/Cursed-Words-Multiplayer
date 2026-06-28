@@ -18,14 +18,14 @@ using UnityEngine.SceneManagement;
 
 /// To do:
 /// 1. Disable Unlocks In Multiplayer
-/// 2. Fix All UI
-/// 3. Fix High Ping Bugs
+/// 2. Fix High Ping Bugs
+/// 3. Change Octacles Ability To Normalize
 /// 
 /// OPTIONAL
-/// 4. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 5. Add wait before starting boss battle?
-/// 6. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 7. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
+/// 3. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 4. Add wait before starting boss battle?
+/// 5. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 6. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
 
 
 namespace CWMultiplayer
@@ -464,7 +464,7 @@ namespace CWMultiplayer
                 else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
 
                 __instance.ShowBoss(bossModifier);
-                ____bossModTMP.SetText("Get To The Next Boss To Battle!");
+                ____bossModTMP.SetText("Get to the next Boss to battle!");
             }
         }
 
@@ -1313,7 +1313,7 @@ namespace CWMultiplayer
                 {
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                    __result = "For Each Highest WORD SCORE This Round, Meg Gets Money";
+                    __result = "For each highest WORD SCORE this encounter, meg gets money.";
                 }
             }
             [HarmonyPatch(typeof(HumanBoyBoss), "GetDescription")]
@@ -1323,7 +1323,7 @@ namespace CWMultiplayer
                 {
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                    __result = "Decreases All Stickers By 1 Level For The Fight (Minimum Level 1)";
+                    __result = "Decreases all Stickers by 1 Level for the fight (Minimum level: 1)";
                 }
             }
             [HarmonyPatch(typeof(PrismaticBeanBoss), "GetDescription")]
@@ -1333,7 +1333,7 @@ namespace CWMultiplayer
                 {
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                    __result = "Colors All Cursed Tiles Randomly. Any Colored With Basic Colors Are Replaced With Consonants";
+                    __result = "Colours all cursed tiles randomly. Any coloured <color=red>RED</color>, <color=blue>BLUE</color>, or <color=\"#36106c\">VOID</color> are replaced with Consonants";
                 }
             }
             #endregion
@@ -2278,7 +2278,7 @@ namespace CWMultiplayer
         public override string GetDescription()
         {
             SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "All Tiles Are Randomized To Be Red, Blue, Or Normal, Tiles Adjacent To Red Or Blue Tiles Get -" + FloorAdjustedModification + " Base Tile Score";
+            return "START OF GRID: All tiles are randomized to be <color=red>RED</color>, <color=blue>BLUE</color>, or COLOURLESS.\nTiles adjacent to <color=red>RED</color> or <color=blue>BLUE</color> tiles get -" + FloorAdjustedModification + " BASE SCORE.";
         }
         public override Sprite GetBossSprite()
         {
@@ -2386,7 +2386,7 @@ namespace CWMultiplayer
         }
         public override string GetDescription()
         {
-            return "Can Only Move Like The Selected Chess Piece (Currently: " + chessPiece.ToString() + ")";
+            return "Can only move like the selected chess piece (Currently: " + chessPiece.ToString() + ")";
         }
         public override Sprite GetBossSprite()
         {
@@ -2430,7 +2430,7 @@ namespace CWMultiplayer
         }
         public override string GetDescription()
         {
-            return "Get -" + (wordScoreTaken / 2) + " WORD SCORE. Decreased by " + ((float)FloorAdjustedModification / 2f) + " for each tile used in your word."; //Stacks for the whole game
+            return "Get -" + (wordScoreTaken / 2) + " WORD SCORE. Decreased by " + ((float)FloorAdjustedModification / 2f) + " for each tile in your word."; //Stacks for the whole game
         }
         public override Sprite GetBossSprite()
         {
@@ -2471,7 +2471,7 @@ namespace CWMultiplayer
         public override string GetDescription()
         {
             SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return FloorAdjustedModification + " Cursed " + (FloorAdjustedModification == 1 ? "Tile Is" : "Tiles Are") + " Replaced With " + (FloorAdjustedModification == 1 ? "A Basic Tile" : "Basic Tiles");
+            return "START OF GRID: " + FloorAdjustedModification + " cursed " + (FloorAdjustedModification == 1 ? "tile is" : "tiles are") + " replaced with " + (FloorAdjustedModification == 1 ? "a COLOURLESS letter." : "COLOURLESS letters.");
         }
         public override Sprite GetBossSprite()
         {
@@ -2513,7 +2513,7 @@ namespace CWMultiplayer
         public override string GetDescription()
         {
             SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "Disables " + FloorAdjustedModification + " Random " + (FloorAdjustedModification == 1 ? "Item" : "Items") + " Each Round";
+            return "START OF GRID: Disables " + FloorAdjustedModification + " random " + (FloorAdjustedModification == 1 ? "item" : "items") + " for the grid.";
         }
         public override Sprite GetBossSprite()
         {
@@ -2556,8 +2556,5 @@ namespace CWMultiplayer
             return unavailableItemsList;
         }
     }
-    //Cretaceous Meg: "For Each Highest WORD SCORE This Round, Meg Gets Money"
-    //Human Boy: "Decreases All Sticker Levels By 1 (Minimum Level 1)"
-    //Beans: "Colors All Cursed Tiles Randomly. Any Colord With Basic Colors Get Replaced With Basic Tiles."
     #endregion
 }
