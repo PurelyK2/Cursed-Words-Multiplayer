@@ -9,11 +9,8 @@ using Steamworks;
 using System.Linq;
 using UnityEngine.InputSystem.UI;
 using System.Threading.Tasks;
-using System.IO;
 using nickeltin.SDF.Runtime;
 using UnityEngine.SceneManagement;
-using System.CodeDom;
-using AsmResolver.Shims;
 
 [assembly: MelonInfo(typeof(CWMultiplayer.MultiplayerManager), "Multiplayer Mod", "0.1.0", "Purely_K2")]
 [assembly: MelonGame("Buried Things", "Cursed Words")]
@@ -577,6 +574,90 @@ namespace CWMultiplayer
                 CursedUI.showLobbyButtonObj.SetActive(false);
             }
         }
+
+        //Button And Such Appearances
+        [HarmonyPatch(typeof(SaveSlotController), "Awake")]
+        public static class PressingButtons_Patch
+        {
+            static void Postfix(SaveSlotController __instance)
+            {
+                if(CursedUI.showLobbyButtonObj.GetComponentsInChildren<Component>().ToList().Exists(component => component.GetType() == typeof(EventTrigger))) return;
+                MakeAnimatedButton(CursedUI.showLobbyButtonObj);
+                MakeAnimatedButton(CursedUI.hideLobbyButtonObj);
+            }
+
+            public static void MakeAnimatedButton(GameObject baseButton)
+            {
+                Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+                Button[] selectButtons = Object.FindObjectsOfType<Button>().Where(button => button.GetComponentInChildren<TextMeshProUGUI>().text == "SELECT").ToArray<Button>();
+                GameObject selectButton = selectButtons[selectButtons.Count() - 1].transform.parent.gameObject;
+                GameObject selectButtonTop = selectButton.GetComponentInChildren<Button>().gameObject;
+
+                Vector2 lobbyButtonSize = baseButton.GetComponent<RectTransform>().sizeDelta;
+                baseButton.GetComponentInChildren<TextMeshProUGUI>().color = Color.black;
+                baseButton.GetComponent<Image>().enabled = false;
+                baseButton.GetComponentInChildren<TextMeshProUGUI>().raycastTarget = false;
+                GameObject thisButtonTop = new GameObject("ButtonTop", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(EventTrigger) });
+                thisButtonTop.transform.SetParent(baseButton.transform);
+                thisButtonTop.GetComponent<RectTransform>().localPosition = Vector3.zero;
+                thisButtonTop.GetComponent<RectTransform>().sizeDelta = new Vector2(lobbyButtonSize.x, lobbyButtonSize.y * 5 / 6);
+                thisButtonTop.GetComponent<Image>().sprite = selectButtonTop.GetComponent<Image>().sprite;
+                thisButtonTop.GetComponent<Image>().color = selectButtonTop.GetComponent<Image>().color;
+                thisButtonTop.GetComponent<Button>().onClick = baseButton.GetComponent<Button>().onClick;
+                thisButtonTop.GetComponent<Button>().transition = Selectable.Transition.Animation;
+
+                //Button Pressed
+                EventTrigger.Entry pointerDownEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerDown };
+                pointerDownEntry.callback.AddListener((data) =>
+                {
+		            thisButtonTop.GetComponent<RectTransform>().localPosition = -6f * Vector2.up;
+		            PersistentSound.SingletonSoundController.ButtonPress();
+                });
+                thisButtonTop.GetComponent<EventTrigger>().triggers.Add(pointerDownEntry);
+
+                //Button Released
+                EventTrigger.Entry pointerUpEntry = new EventTrigger.Entry();
+                pointerUpEntry.eventID = EventTriggerType.PointerUp;
+                pointerUpEntry.callback.AddListener((data) =>
+                {
+                    if(baseButton.name.Contains("Lobby Button") && baseButton.name != "Lobby Button")
+                    {
+                        CursedUI.isUIOpen = baseButton.name == "Show Lobby Button";
+                    }
+		            thisButtonTop.GetComponent<RectTransform>().localPosition = Vector2.zero;
+		            PersistentSound.SingletonSoundController.ButtonRelease();
+                });
+                thisButtonTop.GetComponent<EventTrigger>().triggers.Add(pointerUpEntry);
+                baseButton.GetComponentInChildren<TextMeshProUGUI>().transform.SetParent(thisButtonTop.transform);
+                
+                GameObject thisButtonBG = new GameObject("ButtonTop", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(Image) });
+                thisButtonBG.transform.SetParent(baseButton.transform);
+                thisButtonBG.GetComponent<RectTransform>().localPosition = Vector3.down * 16f;
+                thisButtonBG.GetComponent<RectTransform>().sizeDelta = new Vector2(lobbyButtonSize.x, lobbyButtonSize.y * 5 / 6);
+                thisButtonBG.GetComponent<Image>().sprite = selectButtonTop.GetComponent<Image>().sprite;
+                thisButtonBG.GetComponent<Image>().color = selectButtonTop.GetComponent<Image>().color;
+                thisButtonBG.GetComponent<Image>().color = selectButton.GetComponent<Image>().color;
+
+                thisButtonTop.transform.SetAsFirstSibling();
+                thisButtonBG.transform.SetAsFirstSibling();
+
+                MelonLogger.Msg(thisButtonTop.transform.parent.name);
+
+/*
+ButtonBG(Clone) (UnityEngine.RectTransform)
+ButtonBG(Clone) (UnityEngine.CanvasRenderer)
+ButtonBG(Clone) (UnityEngine.UI.Image)
+ButtonTop (UnityEngine.RectTransform)
+ButtonTop (UnityEngine.CanvasRenderer)
+ButtonTop (UnityEngine.UI.Image)
+ButtonTop (UnityEngine.UI.Button)
+ButtonTop (UnityEngine.EventSystems.EventTrigger)
+SELECT (UnityEngine.RectTransform)
+SELECT (UnityEngine.CanvasRenderer)
+SELECT (TMPro.TextMeshProUGUI)
+*/
+            }
+        }
         #endregion
 
         #region Round Stuff
@@ -693,7 +774,7 @@ namespace CWMultiplayer
 
             //Overlay Stuff
             CursedUI.ToggleOverlay(SceneManager.GetActiveScene().name == SceneNames.EncounterSceneName && ReceivedInfo.hasOpponent);
-            CursedUI.showLobbyButtonObj.SetActive(SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName));
+            CursedUI.showLobbyButtonObj.SetActive((SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName)) && SceneManager.GetActiveScene().name != "PreRoll");
 
             if(!new string[] { SceneNames.EncounterSceneName, SceneNames.ShopSceneName, SceneNames.BossDraftSceneName, SceneNames.BossRewardSceneName }.Contains(SceneManager.GetActiveScene().name))
             {
@@ -1408,7 +1489,7 @@ namespace CWMultiplayer
         private static GameObject lobbyMenuObj = new GameObject("Lobbies Menu", new System.Type[] { typeof(RectTransform), typeof(CursedUI) });
         private static GameObject scrollViewObj = new GameObject("Scorll View", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
         public static GameObject showLobbyButtonObj = new GameObject("Show Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
-        private static GameObject hideLobbyButtonObj = new GameObject("Hide Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
+        public static GameObject hideLobbyButtonObj = new GameObject("Hide Lobby Button", new System.Type[] {typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static GameObject hostButtonObj = new GameObject("Host Button", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(Button), typeof(TextMeshProUGUI), typeof(CursedUI) });
         private static GameObject lobbyIDObj = new GameObject("Lobby ID", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI) });
         private static GameObject lobbyIDBackgroundObj = new GameObject("Lobby ID Background", new System.Type[] { typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(CursedUI) });
@@ -1438,6 +1519,7 @@ namespace CWMultiplayer
         public static Callback<LobbyCreated_t> m_lobbyCreated;
         public static Callback<LobbyDataUpdate_t> m_updateData;
         #endregion
+        public static bool isUIOpen = false;
         public static List<CSteamID> listOfLobbies = new List<CSteamID>();
         public static CSteamID lobbyID;
         public static string lobbyName;
@@ -1516,7 +1598,7 @@ namespace CWMultiplayer
 
             canvasObj.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             canvasObj.GetComponent<CanvasScaler>().referenceResolution = new Vector2(Screen.width, Screen.height);
-            
+
             #region Text Stuff
             RectTransform lobbyIDRect = lobbyIDObj.GetComponent<RectTransform>();
             if(lobbyIDRect != null)
@@ -1628,25 +1710,15 @@ namespace CWMultiplayer
             RectTransform showLobbyButtonRect = showLobbyButtonObj.GetComponent<RectTransform>();
             if(showLobbyButtonRect != null)
             {
-                showLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 3 / 8, 0);
+                showLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 13 / 32, 0);
                 showLobbyButtonRect.sizeDelta = new Vector2(200, 100);
             }
-                UnityEngine.UI.Image showLobbyButtonImg = showLobbyButtonObj.GetComponent<Image>();
-                if(showLobbyButtonImg != null)
-                {
-                    showLobbyButtonImg.color = new UnityEngine.Color(0.25f, 0.25f, 0.25f, 0.95f);
-                }
             RectTransform hideLobbyButtonRect = hideLobbyButtonObj.GetComponent<RectTransform>();
             if(hideLobbyButtonRect != null)
             {
-                hideLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 3 / 8, 0);
+                hideLobbyButtonRect.localPosition = new Vector3(-1 * Screen.width * 3 / 8, Screen.height * 13 / 32, 0);
                 hideLobbyButtonRect.sizeDelta = new Vector2(200, 100);
             }
-                UnityEngine.UI.Image hideLobbyButtonImg = hideLobbyButtonObj.GetComponent<Image>();
-                if(hideLobbyButtonImg != null)
-                {
-                    hideLobbyButtonImg.color = new UnityEngine.Color(0.2f, 0.2f, 0.2f, 1f);
-                }
             RectTransform hostButtonRect = hostButtonObj.GetComponent<RectTransform>();
             if(hostButtonRect != null)
             {
