@@ -22,10 +22,10 @@ using UnityEngine.SceneManagement;
 /// 3. Change Octacles Ability To Normalize
 /// 
 /// OPTIONAL
-/// 3. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 4. Add wait before starting boss battle?
-/// 5. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 6. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
+/// 4. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
+/// 5. Add wait before starting boss battle?
+/// 6. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 7. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
 
 
 namespace CWMultiplayer
@@ -115,7 +115,6 @@ namespace CWMultiplayer
 
                 //Always Do Things
                 CursedUI.UpdateHearts();
-                MegMoney = 0;
 
                 encounterController = __instance;
                 encounterSummaryDisplayController = ____encounterSummaryDisplayController;
@@ -238,7 +237,6 @@ namespace CWMultiplayer
                         else
                         {
                             if(debugMode) MelonLogger.Msg("You Won The Floor!");
-                            ReceivedInfo.opponentHealth -= 1;
                         }
 
                         if(CursedNetworking.myPlayerPacket.health > 0)
@@ -361,6 +359,7 @@ namespace CWMultiplayer
                         _ = AsyncronousWaiting(__instance);
                         return false;
                     }
+                    
                     CursedUI.waitingTextObj.SetActive(false);
                     CursedUI.menuButtonCoverObj.SetActive(false);
                 }
@@ -542,17 +541,6 @@ namespace CWMultiplayer
                     ____portraitAnimator.gameObject.GetComponent<RectTransform>().localScale = Vector3.one;
             }
         }
-        //End Game Boss Unlock Override
-        [HarmonyPatch(typeof(EncounterController), "ShowAchievementSummaryAndChangeScene")]
-        public static class NoYouDidntUnlock_Patch
-        {
-            public static void Prefix()
-            {
-                if(!ReceivedInfo.hasOpponent) return;
-
-                GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.CharactersUnlocked = new List<Character>();
-            }
-        }
         #endregion
 
         #region My UI Activation
@@ -722,7 +710,7 @@ namespace CWMultiplayer
             public static void Postfix(ref List<System.Type> ____stickerPool, ref List<System.Type> ____stampPool)
             {
                 ____stickerPool.RemoveAll(item => item == typeof(DivingMask));
-                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies));
+                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies) || item == typeof(Receipt));
             }
         }
         //Nerf Cursed VHS
@@ -798,8 +786,19 @@ namespace CWMultiplayer
 
             //Overlay Stuff
             CursedUI.ToggleOverlay(SceneManager.GetActiveScene().name == SceneNames.EncounterSceneName && ReceivedInfo.hasOpponent);
+            if(CursedUI.showLobbyButtonObj.activeSelf == CursedUI.hideLobbyButtonObj.activeSelf)
+            {
+                if(!CursedUI.showLobbyButtonObj.activeSelf)
+                {
+                    CursedUI.CloseLobbyStuff();
+                    CursedUI.isUIOpen = false;
+                }
+                else
+                {
+                    CursedUI.isUIOpen = true;
+                }
+            }
             CursedUI.showLobbyButtonObj.SetActive((SceneManager.GetActiveScene().name == SceneNames.SaveSlotsScene || (ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name != SceneNames.EncounterSceneName)) && SceneManager.GetActiveScene().name != "PreRoll" && !CursedUI.isUIOpen);
-
 
             if(!new string[] { SceneNames.EncounterSceneName, SceneNames.ShopSceneName, SceneNames.BossDraftSceneName, SceneNames.BossRewardSceneName }.Contains(SceneManager.GetActiveScene().name))
             {
@@ -1018,33 +1017,76 @@ namespace CWMultiplayer
                     //look for cursed tiles on the board
                     List<Tile> list = new List<Tile>();
                     List<Vector2Int> tileCoords = new List<Vector2Int>();
+                    List<GlyphType> glyphs = new List<GlyphType>();
                     foreach (Tile tile in gridData.GetAvailableTiles())
                     {
                         if(tile.MyGlyphType != GlyphType.Letter)
                         {
                             tileCoords.Add(tile.Coordinates);
+                            glyphs.Add(tile.MyGlyphType);
                         }
                     }
-                    OctaclesBoss octaclesBoss = new OctaclesBoss();
-                    octaclesBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
-                    for(int i = 0; i < octaclesBoss.FloorAdjustedModification; i++)
+
+                    if(glyphs.Count > 0)
                     {
-                        if(tileCoords.Count > 0)
+                        GlyphType thisGlyphType = glyphs[Random.Range(0, glyphs.Count)];
+                        
+                        foreach(Vector2Int tileCoordinates in tileCoords)
                         {
-                            //remove all special things from it
-                            Tile changedTile = gridData.GetTileAtCoordinates(tileCoords[Random.Range(0, tileCoords.Count)]);
-                            changedTile.SetLetter(Vocabulary.ActiveLanguageVocabulary.LanguageAlphabet.GetRandomConsonantWeighted());
-					        changedTile.SetGlyphType(GlyphType.Letter);
-                            changedTile.SetTileType(TileType.Normal);
-                            list.Add(changedTile);
+                            Tile tile = gridData.GetTileAtCoordinates(tileCoordinates);
+                            if(tile.MyGlyphType != GlyphType.Letter)
+                            {
+                                switch(thisGlyphType)
+                                {
+                                    case GlyphType.Blank:
+                                        tile.MyGlyphType = GlyphType.Blank;
+                                        break;
+                                    case GlyphType.Number:
+                                    case GlyphType.Fraction:
+                                        if(Random.Range(0, 2) == 0)
+                                            tile.SetToRandomFraction();
+                                        else
+                                            tile.SetToRandomNumber();
+                                        break;
+                                    case GlyphType.Chess:
+                                        tile.SetToRandomChessPiece();
+                                        break;
+                                    case GlyphType.BespokeCard:
+                                        if(Random.Range(0, 5) == 0)
+                                        {
+                                            tile.SetGlyphType(GlyphType.BespokeCard);
+                                            tile.SetSuit(Suit.Joker);
+                                        }
+                                        else
+                                        {
+                                            tile.SetToRandomLetter();
+                                            tile.SetSuit(new Suit[] { Suit.Clubs, Suit.Diamonds, Suit.Hearts, Suit.Spades}[Random.Range(0, 4)]);
+                                        }
+                                        break;
+                                    case GlyphType.Currency:
+                                        tile.SetToRandomCurrency();
+                                        break;
+                                    case GlyphType.ScatteredItem:
+                                        tile.SetToRandomItem();
+                                        break;
+                                    case GlyphType.Arrow:
+                                        MelonLogger.Msg("Arrow is actually used!?!" + tile.GetStringRepresentation());
+                                        break;
+                                    default:
+                                        if(debugMode) MelonLogger.Msg("Error: thisGlyphType isn't a valid glyph type");
+                                        break;
+                                }
+                                list.Add(tile);
+                            }
+                        }
+                        //update the grid
+                        if (list.Count > 0)
+                        {
+                            BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(OctaclesBoss), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
+                            vizSteps.Add(item);
                         }
                     }
-                    //update the grid
-                    if (list.Count > 0)
-                    {
-                        BoardGenVizInfo item = new BoardGenVizInfo(gridData, null, list, false, typeof(OctaclesBoss), false, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles);
-                        vizSteps.Add(item);
-                    }
+
                 }
 
                 //Nat In Pre-Grid
@@ -1248,20 +1290,6 @@ namespace CWMultiplayer
             }
         }
         
-        //Meg's Income
-        [HarmonyPatch(typeof(EncounterController), "DisplayScoreSteps", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(List<Tile>)})]
-        public static class MegStonks_Patch
-        {
-            public static void Prefix(ref Dictionary<string, int> ____earningsBreakdown, ref EncounterController __instance, ref int ____totalGridsPerRound)
-            {
-                if(MegMoney > 0)
-                {
-                    ____earningsBreakdown["Meg's Finances"] = MegMoney;
-                    MegMoney = 0;
-                }
-            }
-        }
-        
         //Remove Meg's Normal Ability
         [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
         public static class NoMoneyForYou_Patch
@@ -1280,6 +1308,21 @@ namespace CWMultiplayer
             GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.TotalCashEarned += money;
             GameStatics.GetPlayer().ChangeMoney(money);
             MegMoney += money;
+            MelonLogger.Msg("Gained $" + money);
+        }
+        
+        //Meg's Money
+        [HarmonyPatch(typeof(EncounterController), "ShowScoreCalculation", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(ScorePacket), typeof(ScorePacket), typeof(List<Tile>), typeof(System.Collections.IEnumerator) })]
+        public static class MegDoesTaxes_Patch
+        {
+            public static void Prefix(ref List<ScoreCalcVizInfo> steps, ref int ____remainingGrids)
+            {
+                if(____remainingGrids > 0) return;
+
+                steps[0].EarningsBreakdown["Meg's Income"] = MegMoney;
+                MelonLogger.Msg(MegMoney);
+                MegMoney = 0;
+            }
         }
 
         //Stop Human Boy If You Should
@@ -1471,7 +1514,7 @@ namespace CWMultiplayer
                 {
                     ReceivedInfo.opponentIsInBoss = lobbyDataList[1] == "True";
                     //Meg Boss Money
-                    if(highScoreLong > ReceivedInfo.opponentHighscore.Score && MultiplayerManager.encounterController != null && MultiplayerManager.encounterController.GetBossModifiers().Count(modifier => modifier.GetType() == typeof(CretaceousMegBoss)) > 0)
+                    if(highScoreLong > ReceivedInfo.opponentHighscore.Score && CursedNetworking.myPlayerPacket.myCharacterName == new Spike().GetName() && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss)
                     {
                         if(MultiplayerManager.debugMode) MelonLogger.Msg("Updating Meg Money");
                         int money = (int)highScoreLong / (GameStatics.GetPlayer().CurrentRunProgress.GetStage() * GameStatics.GetPlayer().CurrentRunProgress.GetStage() * 50);
@@ -1580,16 +1623,6 @@ namespace CWMultiplayer
                 foeHeartsObj.transform.SetParent(canvasObj.transform);
                 overrideWaitingButtonObj.transform.SetParent(canvasObj.transform);
                 overrideWaitingButtonTextObj.transform.SetParent(overrideWaitingButtonObj.transform);
-
-            //Iteration Through All
-            foreach(var thisObject in lobbyObjects)
-            {
-                //Persistence
-                Object.DontDestroyOnLoad(thisObject);
-
-                //hidden
-                thisObject.SetActive(new List<GameObject>{ canvasObj, eventSystemObj, showLobbyButtonObj }.Contains(thisObject));
-            }
             
             // Also mark input field text components for persistence
             Object.DontDestroyOnLoad(inputFieldTextObj);
@@ -1615,12 +1648,9 @@ namespace CWMultiplayer
             }
             canvasObj.GetComponent<Canvas>().sortingOrder = 999;
             canvasObj.GetComponent<Image>().enabled = false;
-            menuButtonCoverObj.SetActive(false);
         }
         public static void SetUpUIAppearance()
         {
-            SetUIHeirarchy();
-
             canvasObj.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             canvasObj.GetComponent<CanvasScaler>().referenceResolution = new Vector2(Screen.width, Screen.height);
 
@@ -1662,7 +1692,7 @@ namespace CWMultiplayer
                     waitingText.autoSizeTextContainer = true;
                     waitingText.alignment = TextAlignmentOptions.Center;
                 }
-            waitingTextObj.SetActive(false);
+
 
             TextMeshProUGUI showLobbyButtonText = showLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(showLobbyButtonText != null)
@@ -1922,12 +1952,11 @@ namespace CWMultiplayer
                 foeHeartsObj.GetComponent<TextMeshProUGUI>().autoSizeTextContainer = true;
                 foeHeartsObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.Center;
             }
-            UpdateHearts(3, 3);
-            overrideWaitingButtonObj.SetActive(false);
             #endregion
         }
         public void SetUpUI() //Called Once On Game Start
         {
+            SetUIHeirarchy();
             SetUpUIAppearance();
             
             #region Buttons Callbacks
@@ -1978,6 +2007,21 @@ namespace CWMultiplayer
             m_lobbyEnter = Callback<LobbyEnter_t>.Create(OnLobbyEnter);
             m_updateData = Callback<LobbyDataUpdate_t>.Create(CursedNetworking.ReceiveAndUpdateFoeInfo);
             m_lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
+            #endregion
+
+            #region Init Setup
+            //Iteration Through All
+            foreach(var thisObject in lobbyObjects)
+            {
+                //Persistence
+                Object.DontDestroyOnLoad(thisObject);
+
+                //hidden
+                thisObject.SetActive(new List<GameObject>{ canvasObj, eventSystemObj, showLobbyButtonObj }.Contains(thisObject));
+            }
+            waitingTextObj.SetActive(false);
+            overrideWaitingButtonObj.SetActive(false);
+            menuButtonCoverObj.SetActive(false);
             #endregion
         }
 
@@ -2459,7 +2503,7 @@ namespace CWMultiplayer
         public override string GetDescription()
         {
             SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "START OF GRID: " + FloorAdjustedModification + " cursed " + (FloorAdjustedModification == 1 ? "tile is" : "tiles are") + " replaced with " + (FloorAdjustedModification == 1 ? "a COLOURLESS letter." : "COLOURLESS letters.");
+            return "START OF GRID: All cursed tiles are replaced with 1 random curse type.";
         }
         public override Sprite GetBossSprite()
         {
