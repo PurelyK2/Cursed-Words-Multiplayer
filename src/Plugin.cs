@@ -19,7 +19,7 @@ using UnityEngine.SceneManagement;
 /// To do:
 /// 1. Disable Unlocks In Multiplayer
 /// 2. Fix High Ping Bugs
-/// 3. Change Octacles Ability To Normalize
+/// 3. Fix Nat's Interactions With Inventory Visuals
 /// 
 /// OPTIONAL
 /// 4. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
@@ -920,15 +920,22 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
+                try
                 {
-                    if(debugMode) MelonLogger.Msg("Vs Nat");
-                    
-                    encounterController.PulseBossModifier(typeof(NatBoss));
+                    if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
+                    {
+                        if(debugMode) MelonLogger.Msg("Vs Nat");
+                        
+                        encounterController.PulseBossModifier(typeof(NatBoss));
 
-                    NatBoss natBoss = new NatBoss();
-                    natBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-                    natBoss.GetRandomizedUnavailableItems();
+                        NatBoss natBoss = new NatBoss();
+                        natBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                        natBoss.GetRandomizedUnavailableItems();
+                    }
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
                 }
             }
         }
@@ -937,9 +944,17 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref List<Item> __result)
             {
-                if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                try
                 {
-                    __result = (from item in __result where !NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()) select item).ToList();
+                    if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    {
+                        if(ReceivedInfo.foeCharacter?.GetType() == typeof(NathaServo) && !ReceivedInfo.noBossEffects)
+                            __result = (from item in __result where !NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()) select item).ToList();
+                    }
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
                 }
             }
         }
@@ -1163,10 +1178,17 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref bool isIncludingInventory, ref List<Item> __result)
             {
-                if(isIncludingInventory && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                try
                 {
-                    int resultCount = __result.Count;
-                    __result.RemoveAll(item => GameStatics.GetPlayer().GetAllItems(false).Contains(item) && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()));
+                    if(isIncludingInventory && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    {
+                        int resultCount = __result.Count;
+                        __result.RemoveAll(item => GameStatics.GetPlayer().GetAllItems(false).Contains(item) && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()));
+                    }
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
                 }
             }
         }
@@ -1242,21 +1264,28 @@ namespace CWMultiplayer
             public static void Postfix(ref List<ItemObject> ____stickerObjects)
             {
                 if(!ReceivedInfo.hasOpponent) return;
-
-                Player player = GameStatics.GetPlayer();
-                if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
+                
+                try
                 {
-                    if(encounterController != null && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    Player player = GameStatics.GetPlayer();
+                    if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
                     {
-                        foreach(ItemObject item in ____stickerObjects)
+                        if(encounterController != null && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
                         {
-                            if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
+                            foreach(ItemObject item in ____stickerObjects)
                             {
-                                SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
-                                if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
+                                {
+                                    SDFImage itemImage = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                    if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                }
                             }
                         }
                     }
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
                 }
             }
         }
@@ -1267,29 +1296,36 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent) return;
 
-                Player player = GameStatics.GetPlayer();
-                if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
+                try
                 {
-                    if(encounterController != null && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
+                    Player player = GameStatics.GetPlayer();
+                    if(player.CurrentRunProgress.GetCurrentNodeType() == NodeType.Boss)
                     {
-                        foreach(ItemObject item in ____stampObjects)
+                        if(encounterController != null && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
                         {
-                            if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
+                            foreach(ItemObject item in ____stampObjects)
                             {
-                                SDFImage[] itemImages = item.GetComponentsInChildren<nickeltin.SDF.Runtime.SDFImage>();
-                                foreach (SDFImage itemImage in itemImages)
+                                if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
                                 {
-                                    if(itemImage != null) itemImage.color = UnityEngine.Color.black;
-                                }
+                                    SDFImage[] itemImages = item.GetComponentsInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                    foreach (SDFImage itemImage in itemImages)
+                                    {
+                                        if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                    }
 
-                                if(debugMode) MelonLogger.Msg("Found Item: " + item.MyItem.Name);
+                                    if(debugMode) MelonLogger.Msg("Found Item: " + item.MyItem.Name);
+                                }
                             }
                         }
                     }
                 }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
             }
         }
-        
+
         //Remove Meg's Normal Ability
         [HarmonyPatch(typeof(EncounterController), "IsBossModifierActive")]
         public static class NoMoneyForYou_Patch
