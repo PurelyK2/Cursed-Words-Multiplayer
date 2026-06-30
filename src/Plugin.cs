@@ -18,11 +18,10 @@ using UnityEngine.SceneManagement;
 
 /// To do:
 /// 1. Fix Nat's Interactions With Inventory Visuals
-/// 2. Track ReceivedInfo.foeBoss instead of foeCharacter
 /// 
 /// OPTIONAL
 /// 3. Add wait before starting boss battle?
-/// 4. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
+/// 4. Make Time Limit From One Boss To The Next (override speedrun timer to do so, start when the foe has finished)
 
 
 namespace CWMultiplayer
@@ -43,6 +42,25 @@ namespace CWMultiplayer
         {
             CursedNetworking.SetUpNetworking();
             if(debugMode) MelonLogger.Msg("Loaded Multiplayer Mod");
+
+            //For connecting custom characters
+            List<MelonMod> multCompatableMods = MelonMod.RegisteredMelons.Where(mod => mod.Info.Name != "Multiplayer Mod").ToList();
+            
+            Dictionary<Character, BossModifier> moddedCharacters = new Dictionary<Character, BossModifier>();
+            foreach(MelonMod mod in multCompatableMods)
+            {
+                List<System.Type> modTypes = mod.MelonAssembly.Assembly.GetTypes().Where(t => t != null && t.IsClass && !t.IsAbstract).ToList();
+                
+
+                List<System.Type> bossModifiers = modTypes.Where(t => typeof(BossModifier).IsAssignableFrom(t)).ToList();
+                List<System.Type> characters = modTypes.Where(t => typeof(Character).IsAssignableFrom(t)).ToList();
+
+                foreach(System.Type bossModifierType in bossModifiers)
+                {
+                    ReceivedInfo.AllBosses.Add(bossModifierType);
+                    MelonLogger.Msg("Added \"" + bossModifierType.Name + "\" To Boss List");
+                }
+            }
         }
         public override void OnApplicationQuit()
         {
@@ -276,6 +294,7 @@ namespace CWMultiplayer
                 CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
             }
         }
+
         //Skip to the end if you won
         [HarmonyPatch(typeof(RunProgress), "IsFinalStage")]
         public static class Winning_Patch
@@ -292,6 +311,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Boss Reward Increase To Make Up For Grids
         [HarmonyPatch(typeof(Reward), MethodType.Constructor, new System.Type[] { typeof(string), typeof(int), typeof(bool), typeof(bool) })]
         public static class IncreaseBossReward_Patch
@@ -311,6 +331,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Patch Skipping Last Grid
         [HarmonyPatch(typeof(EncounterController), "SkipWordSubmission")]
         public static class IsStillWin_Patch
@@ -345,7 +366,7 @@ namespace CWMultiplayer
                     if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
                     BonesBoss.wordScoreTaken = 0;
 
-                    if(ReceivedInfo.foeCharacter == null)
+                    if(ReceivedInfo.foeBoss == null)
                     {
                         CursedUI.waitingTextObj.SetActive(true);
                         CursedUI.menuButtonCoverObj.SetActive(true);
@@ -373,43 +394,15 @@ namespace CWMultiplayer
                 if(!ReceivedInfo.hasOpponent) return;
                 try
                 {
+                    if(ReceivedInfo.foeBoss == null) return;
+
                     __result.AvailableBosses.RemoveAll(t => true);
 
-                    BossModifier bossModifier = new RandomiseItemOrder();
-                    if(ReceivedInfo.foeCharacter != null)
-                    {   
-                        System.Type foeCharacterType = ReceivedInfo.foeCharacter.GetType();
+                    if(ReceivedInfo.foeBoss?.GetType() != typeof(HumanBoyBoss))
+                        ReceivedInfo.foeBoss?.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
 
-                        if(foeCharacterType == typeof(WetDennis))
-                            bossModifier = new RodmanBoss();
-                        else if(foeCharacterType == typeof(NinaNix))
-                            bossModifier = new NinaNixBoss();
-                        else if(foeCharacterType == typeof(HayleyBayles))
-                            bossModifier = new HayleyBaylesBoss();
-                        else if(foeCharacterType == typeof(SamGambit))
-                            bossModifier = new SamGambitBoss();
-                        else if(foeCharacterType == typeof(BonesTheDog))
-                            bossModifier = new BonesBoss();
-                        else if(foeCharacterType == typeof(Octacles))
-                            bossModifier = new OctaclesBoss();
-                        else if(foeCharacterType == typeof(NathaServo))
-                            bossModifier = new NatBoss();
-                        else if(foeCharacterType == typeof(SandySaguaro))
-                            bossModifier = new SandySaguaroBoss();
-                        else if(foeCharacterType == typeof(Spike))
-                            bossModifier = new CretaceousMegBoss();
-                        else if(foeCharacterType == typeof(SockHead))
-                            bossModifier = new HumanBoyBoss();
-                        else if(foeCharacterType == typeof(PrismaticBean))
-                            bossModifier = new PrismaticBeanBoss();
-                        else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
-                    }
-
-                    if(bossModifier.GetType() != typeof(HumanBoyBoss))
-                        bossModifier.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
-
-                    __result.AvailableBosses.Add(bossModifier);
-                    __result.AvailableBosses.Add(bossModifier);
+                    __result.AvailableBosses.Add(ReceivedInfo.foeBoss);
+                    __result.AvailableBosses.Add(ReceivedInfo.foeBoss);
                 }
                 catch (System.Exception e)
                 {
@@ -424,38 +417,9 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref TextMeshProUGUI ____bossModTMP, ref EncounterSummaryDisplayController __instance)
             {
-                if(!ReceivedInfo.hasOpponent || ReceivedInfo.foeCharacter == null || GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.foeBoss == null || GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss) return;
 
-                if(debugMode) MelonLogger.Msg("Showing Foe Character");
-
-                System.Type foeCharacterType = ReceivedInfo.foeCharacter.GetType();
-                BossModifier bossModifier = new RandomiseItemOrder();
-
-                if(foeCharacterType == typeof(WetDennis))
-                    bossModifier = new RodmanBoss();
-                else if(foeCharacterType == typeof(NinaNix))
-                    bossModifier = new NinaNixBoss();
-                else if(foeCharacterType == typeof(HayleyBayles))
-                    bossModifier = new HayleyBaylesBoss();
-                else if(foeCharacterType == typeof(SamGambit))
-                    bossModifier = new SamGambitBoss();
-                else if(foeCharacterType == typeof(BonesTheDog))
-                    bossModifier = new BonesBoss();
-                else if(foeCharacterType == typeof(Octacles))
-                    bossModifier = new OctaclesBoss();
-                else if(foeCharacterType == typeof(NathaServo))
-                    bossModifier = new NatBoss();
-                else if(foeCharacterType == typeof(SandySaguaro))
-                    bossModifier = new SandySaguaroBoss();
-                else if(foeCharacterType == typeof(Spike))
-                    bossModifier = new CretaceousMegBoss();
-                else if(foeCharacterType == typeof(SockHead))
-                    bossModifier = new HumanBoyBoss();
-                else if(foeCharacterType == typeof(PrismaticBean))
-                    bossModifier = new PrismaticBeanBoss();
-                else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
-
-                __instance.ShowBoss(bossModifier);
+                __instance.ShowBoss(ReceivedInfo.foeBoss);
                 ____bossModTMP.SetText("Get to the next Boss to battle!");
             }
         }
@@ -525,7 +489,7 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref Animator ____portraitAnimator)
             {
-                if(ReceivedInfo.foeCharacter != null && !new List<System.Type> {typeof(SandySaguaro), typeof(Spike), typeof(SockHead), typeof(PrismaticBean)}.Contains(ReceivedInfo.foeCharacter.GetType()))
+                if(ReceivedInfo.foeBoss != null && !ReceivedInfo.foeBoss.IsSecretCharacter)
                 {
                     RectTransform rect = ____portraitAnimator.transform.parent.GetComponent<RectTransform>();
                     rect.localScale = new Vector3(-1, 1, 1);
@@ -875,6 +839,18 @@ namespace CWMultiplayer
                 CursedUI.SetUpUIAppearance();
             }
         }
+        
+        //Stop End Of Thingy Getting Stuck
+        [HarmonyPatch(typeof(SaveManager), "SetChallengeComplete", new System.Type[] { typeof(ChallengeRun) })]
+        public static class NoCompletion_Patch
+        {
+            public static bool Prefix(ref ChallengeRun challenge, ref bool __result)
+            {
+                if(challenge.GetType() != typeof(Multiplayer)) return true;
+                __result = false;
+                return false;
+            }
+        }
         #endregion
 
         #region Boss Effects
@@ -930,14 +906,14 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref EncounterSummaryDisplayController ____encounterSummaryDisplayController)
             {
-                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || ReceivedInfo.foeCharacter == null) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || ReceivedInfo.foeBoss == null) return;
 
-                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeCharacter.GetType() == typeof(SamGambit))
+                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(SamGambitBoss))
                 {
                     if(debugMode) MelonLogger.Msg("Vs Sam");
                     ____encounterSummaryDisplayController.ShowBoss(new SamGambitBoss());
                 }
-                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeCharacter.GetType() == typeof(BonesBoss))
+                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(BonesBoss))
                 {
                     ____encounterSummaryDisplayController.ShowBoss(new BonesBoss());
                 }
@@ -948,9 +924,9 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref TextMeshProUGUI ____bossModTMP)
             {
-                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || ReceivedInfo.foeCharacter == null) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || ReceivedInfo.foeBoss == null) return;
 
-                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeCharacter.GetType() == typeof(SamGambit))
+                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(SamGambitBoss))
                 {
                     SamGambitBoss.RandomizeChessPiece();
                     SamGambitBoss samGambitBoss = new SamGambitBoss();
@@ -958,7 +934,7 @@ namespace CWMultiplayer
                     ____bossModTMP.text = samGambitBoss.GetDescription();
                 }
                 
-                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeCharacter.GetType() == typeof(BonesBoss))
+                if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(BonesBoss))
                 {
                     BonesBoss bonesBoss = new BonesBoss();
                     bonesBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
@@ -1001,7 +977,7 @@ namespace CWMultiplayer
                 {
                     if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
                     {
-                        if(ReceivedInfo.foeCharacter?.GetType() == typeof(NathaServo) && !ReceivedInfo.noBossEffects)
+                        if(ReceivedInfo.foeBoss?.GetType() == typeof(NatBoss) && !ReceivedInfo.noBossEffects)
                             __result = (from item in __result where !NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.GetType()) select item).ToList();
                     }
                 }
@@ -1476,30 +1452,17 @@ namespace CWMultiplayer
 
                 BossModifier bossModifier = new RandomiseItemOrder();
 
-                if(__instance.GetType() == typeof(WetDennis))
-                    bossModifier = new RodmanBoss();
-                else if(__instance.GetType() == typeof(NinaNix))
-                    bossModifier = new NinaNixBoss();
-                else if(__instance.GetType() == typeof(HayleyBayles))
-                    bossModifier = new HayleyBaylesBoss();
-                else if(__instance.GetType() == typeof(SamGambit))
-                    bossModifier = new SamGambitBoss();
-                else if(__instance.GetType() == typeof(BonesTheDog))
-                    bossModifier = new BonesBoss();
-                else if(__instance.GetType() == typeof(Octacles))
-                    bossModifier = new OctaclesBoss();
-                else if(__instance.GetType() == typeof(NathaServo))
-                    bossModifier = new NatBoss();
-                else if(__instance.GetType() == typeof(SandySaguaro))
-                    bossModifier = new SandySaguaroBoss();
-                else if(__instance.GetType() == typeof(Spike))
-                    bossModifier = new CretaceousMegBoss();
-                else if(__instance.GetType() == typeof(SockHead))
-                    bossModifier = new HumanBoyBoss();
-                else if(__instance.GetType() == typeof(PrismaticBean))
-                    bossModifier = new PrismaticBeanBoss();
-                else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
-                
+                foreach(System.Type bossType in ReceivedInfo.AllBosses)
+                {
+                    BossModifier modifier = (BossModifier)System.Activator.CreateInstance(bossType);
+
+                    if(modifier.CharacterToUnlock == __instance.GetType())
+                    {
+                        bossModifier = modifier;
+                        MelonLogger.Msg("Found Character: " + bossModifier.Name);
+                    }
+                }
+
                 if(bossModifier.GetType() == typeof(CretaceousMegBoss))
                 {
                     __result = "As a boss:\n\n" + "Meg gets money based on the foe's highest scoring word for the encounter.";
@@ -1510,9 +1473,15 @@ namespace CWMultiplayer
                     __result = "As a boss:\n\n" + "Decreases all Stickers by 1 Level for the fight (Minimum level: 1).";
                     return;
                 }
-
-                bossModifier.SetFloorAdjustedModification(0, false);
-                __result = "As a boss:\n\n" + bossModifier.GetDescription();
+                try
+                {
+                    bossModifier.SetFloorAdjustedModification(0, false);
+                    __result = "As a boss:\n\n" + bossModifier.GetDescription();
+                }
+                catch(System.Exception e)
+                {
+                    MelonLogger.Msg(e);
+                }
             }
         }
         [HarmonyPatch(typeof(PrismaticBean), "GetDescription")]
@@ -1533,7 +1502,21 @@ namespace CWMultiplayer
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = null;
+        public static BossModifier foeBoss = null;
+        public static List<System.Type> AllBosses = new List<System.Type>
+        {
+            typeof(RodmanBoss),
+            typeof(NinaNixBoss),
+            typeof(HayleyBaylesBoss),
+            typeof(SamGambitBoss),
+            typeof(BonesBoss),
+            typeof(OctaclesBoss),
+            typeof(NatBoss),
+            typeof(SandySaguaroBoss),
+            typeof(CretaceousMegBoss),
+            typeof(HumanBoyBoss),
+            typeof(PrismaticBeanBoss)
+        };
 
         public static void ResetInfo()
         {
@@ -1541,17 +1524,17 @@ namespace CWMultiplayer
             opponentIsInBoss = false;
             opponentHighscore = new ScorePacket(0);
             opponentHealth = 3;
-            foeCharacter = null;
+            foeBoss = null;
         }
-        public static void SetFoeCharacter(string characterName)
+        public static void SetFoeBoss(string characterName)
         {
-            List<System.Type> characterTypes = Character.GetAllCharacters();
-            foreach (var charType in characterTypes)
+            foreach (System.Type bossType in AllBosses)
             {
-                Character thisCharacter = (Character)System.Activator.CreateInstance(charType);
-                if(thisCharacter.GetName() == characterName)
+                BossModifier modifier = (BossModifier)System.Activator.CreateInstance(bossType);
+                if(modifier.Name == characterName)
                 {
-                    foeCharacter = thisCharacter;
+                    foeBoss = modifier;
+                    if(MultiplayerManager.debugMode) MelonLogger.Msg("Foe Is: " + modifier.Name);
                     return;
                 }
             }
@@ -1680,11 +1663,7 @@ namespace CWMultiplayer
                     }
                     if(!string.IsNullOrEmpty(lobbyDataList[4]))
                     {
-                        ReceivedInfo.SetFoeCharacter(lobbyDataList[4]);
-                    }
-                    else
-                    {
-                        ReceivedInfo.foeCharacter = new PrismaticBean();
+                        ReceivedInfo.SetFoeBoss(lobbyDataList[4]);
                     }
                 }
                 else
@@ -2455,6 +2434,7 @@ namespace CWMultiplayer
             this.DifficultyModifier = new List<int> { 1, 5, 10, 15, 20, 69696969 };
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(WetDennis);
         }
         public override string GetDescription()
         {
@@ -2501,6 +2481,7 @@ namespace CWMultiplayer
             this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(NinaNix);
         }
         public override string GetDescription()
         {
@@ -2536,6 +2517,7 @@ namespace CWMultiplayer
             this.SpriteFileName = new HayleyBayles().GetArtFileName();
             this.UIColor = new HayleyBayles().GetUIColorA();
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(HayleyBayles);
         }
         public override Sprite GetBossSprite()
         {
@@ -2571,6 +2553,7 @@ namespace CWMultiplayer
             this.DifficultyModifier = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0 };
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(SamGambit);
         }
         public override string GetDescription()
         {
@@ -2615,6 +2598,7 @@ namespace CWMultiplayer
             this.DifficultyModifier = new List<int> { 1, 2, 3, 4, 5, 6 };
             this.DifficultyIncrease = new List<int> { 1, 1, 2, 2, 3, 4 };
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(BonesTheDog);
         }
         public override string GetDescription()
         {
@@ -2654,6 +2638,7 @@ namespace CWMultiplayer
             this.DifficultyIncrease = new List<int> { 0, 0, 0, 0, 0, 0};
             this.BannedFloorIndexes = new List<int>();
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(Octacles);
         }
 
         public override string GetDescription()
@@ -2697,6 +2682,7 @@ namespace CWMultiplayer
             this.DifficultyIncrease = new List<int> { 1, 1, 1, 1, 1, 1};
             this.BannedFloorIndexes = new List<int>();
             this.CanBeSummonedByMichael = false;
+            this.CharacterToUnlock = typeof(NathaServo);
         }
 
         public override string GetDescription()
