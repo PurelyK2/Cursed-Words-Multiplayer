@@ -17,15 +17,11 @@ using UnityEngine.SceneManagement;
 
 
 /// To do:
-/// 1. Disable Unlocks In Multiplayer
-/// 2. Fix High Ping Bugs
-/// 3. Fix Nat's Interactions With Inventory Visuals
+/// 1. Fix Nat's Interactions With Inventory Visuals
 /// 
 /// OPTIONAL
-/// 4. Make toggle for real time or grid-based updates for visual score during boss rounds (in update)
-/// 5. Add wait before starting boss battle?
-/// 6. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
-/// 7. Make "Skip Rest" button for skipping the rest of the grids if your foe is done and you have won already (So that it's optional)
+/// 3. Add wait before starting boss battle?
+/// 4. Make Time Limit From One Boss To The Next (override speedrun timer to do so?)
 
 
 namespace CWMultiplayer
@@ -39,7 +35,6 @@ namespace CWMultiplayer
         public static ScorePacket currentRemainingTarget = new ScorePacket(0);
         public static EncounterController encounterController;
         public static EncounterSummaryDisplayController encounterSummaryDisplayController;
-        public static int MegMoney = 0;
         #endregion
         
         #region Melon Stuff
@@ -344,13 +339,10 @@ namespace CWMultiplayer
 
                 try
                 {
-                    if(CursedNetworking.myPlayerPacket.myCharacterName != ____activeCharacter.GetName())
-                    {
-                        CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
-                        CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
-                        if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
-                        BonesBoss.wordScoreTaken = 0;
-                    }
+                    CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
+                    CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
+                    if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
+                    BonesBoss.wordScoreTaken = 0;
 
                     if(ReceivedInfo.foeCharacter == null)
                     {
@@ -527,11 +519,11 @@ namespace CWMultiplayer
         }
         //Flip Sprite
         [HarmonyPatch(typeof(EnemyVisualController), "PopulateEnemyAnimator")]
-        public static class NopeTheOtherWay_Patch
+        public static class FlipBosses_Patch
         {
             public static void Postfix(ref Animator ____portraitAnimator)
             {
-                if(ReceivedInfo.foeCharacter != null && new List<System.Type> { typeof(WetDennis), typeof(NinaNix), typeof(HayleyBayles), typeof(SamGambit), typeof(BonesTheDog), typeof(Octacles), typeof(NathaServo) }.Contains(ReceivedInfo.foeCharacter.GetType()))
+                if(ReceivedInfo.foeCharacter != null && !new List<System.Type> {typeof(SandySaguaro), typeof(Spike), typeof(SockHead), typeof(PrismaticBean)}.Contains(ReceivedInfo.foeCharacter.GetType()))
                 {
                     RectTransform rect = ____portraitAnimator.transform.parent.GetComponent<RectTransform>();
                     rect.localScale = new Vector3(-1, 1, 1);
@@ -673,6 +665,16 @@ namespace CWMultiplayer
         #endregion
 
         #region Round Stuff
+        //Make a Challenge
+        [HarmonyPatch(typeof(EncounterController), "Start")]
+        public static class IsThatAChallengeIHear_Patch
+        {
+            public static void Prefix()
+            {
+                if(GameStatics.GetPlayer().CurrentRunProgress.Challenge == null && ReceivedInfo.hasOpponent)
+                    GameStatics.GetPlayer().CurrentRunProgress.Challenge = new Multiplayer();
+            }
+        }
         //Get Score For Word
         [HarmonyPatch(typeof(ScoreCalculation), "GetScoreFromScoreCalcInfo", new System.Type[] { typeof(List<ScoreCalcVizInfo>) })]
         public static class GetScoreFromScoreCalcInfo_Patch
@@ -714,14 +716,65 @@ namespace CWMultiplayer
             }
         }
         //Nerf Cursed VHS
-        [HarmonyPatch(typeof(CursedVHS), MethodType.Constructor)]
-        public static class PerfectlyBalancedAsAllThingsShouldBe_Patch
-        {
-            public static void Postfix(ref ItemRarity ___Rarity, ref CursedVHS __instance)
+            #region Cursed VHS
+            [HarmonyPatch(typeof(CursedVHS), MethodType.Constructor)]
+            public static class CursedVHS_Patch
             {
-                ___Rarity = ItemRarity.Legendary;
+                public static void Postfix(ref List<UpgradeableComponent> ___UpgradeableComponents, ref ItemRarity ___Rarity, ref int ___Cost, ref List<ItemTag> ___Tags, ref List<TileType> ___RelevantColours)
+                {
+                    ___UpgradeableComponents = new List<UpgradeableComponent>();
+                    ___Rarity = ItemRarity.Rare;
+                }
             }
-        }
+                //Fix Description
+                [HarmonyPatch(typeof(CursedVHS), "GetDescription")]
+                public static class CursedVHS_Description_Patch
+                {
+                    public static bool Prefix(ref string __result)
+                    {
+                        __result = "START OF GRID: Scatters a level 1 item from the cursed item pool for each curse type on the grid";
+                        return false;
+                    }
+                }
+                //Fix Effect
+                [HarmonyPatch(typeof(CursedVHS), "ApplyStartOfGridEffect", new System.Type[] { typeof(GridData), typeof(int), typeof(int), typeof(List<HistoricWord>), typeof(List<BoardGenVizInfo>), typeof(bool) })]
+                public static class CursedVHS_Effect_Patch
+                {
+                    public static bool Prefix(ref GridData __result, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps, ref CursedVHS __instance)
+                    {
+                        List<Tile> list = new List<Tile>();
+                        List<Tile> list2 = new List<Tile>();
+                        List<CurseType> list3 = new List<CurseType>();
+                        foreach (Tile tile in gridData.GetAvailableTiles())
+                        {
+                            foreach (CurseType curseType in tile.GetCurseTypes())
+                            {
+                                if (!list3.Contains(curseType) && curseType != CurseType.None)
+                                {
+                                    list2.Add(tile);
+                                    list3.Add(curseType);
+                                }
+                            }
+                        }
+                        for (int i = 0; i < list3.Count; i++)
+                        {
+                            Tile tileForItemScatter = GridUtility.Singleton.GetTileForItemScatter(gridData, TileType.Normal, GlyphType.ScatteredItem, null, false);
+                            if (tileForItemScatter != null)
+                            {
+                                tileForItemScatter.SetScatteredItem(ScatteredItemPools.GetRandomCursedBuildItem());
+                                list.Add(tileForItemScatter);
+                            }
+                        }
+                        if (list.Count > 0)
+                        {
+                            vizSteps.Add(new BoardGenVizInfo(gridData, __instance, list, false, null, true, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles));
+                        }
+                        __result = gridData;
+
+                        return false;
+                    }
+                }
+            #endregion
         #endregion
 
         #region Other Stuff
@@ -741,9 +794,7 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref Player __result)
             {
-                if(ReceivedInfo.hasOpponent && CursedUI.lobbyID == CSteamID.Nil) return; //Test For Hard Coded Made Easier
-
-                if(ReceivedInfo.hasOpponent && SceneManager.GetActiveScene().name == SceneNames.MainMenuSceneName)
+                if(CursedUI.lobbyID != CSteamID.Nil && SceneManager.GetActiveScene().name == SceneNames.MainMenuSceneName)
                 {
                     __result = null;
                 }
@@ -994,7 +1045,7 @@ namespace CWMultiplayer
                         foreach (Tile tile2 in tilesAdjacentToCoordinates)
                         {
                             TileType tileType = tile2.GetTileType();
-                            if (tileType == TileType.Blue || tileType == TileType.Red)
+                            if (tileType != TileType.Normal && !list2.Contains(tileType))
                             {
                                 list2.Add(tileType);
                             }
@@ -1002,7 +1053,8 @@ namespace CWMultiplayer
                         if (list2.Count > 0)
                         {
                             RodmanBoss rodmanBoss = new RodmanBoss();
-                            rodmanBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                            rodmanBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage(), false);
+
                             tile.ValueModifier -= (long)(rodmanBoss.FloorAdjustedModification * list2.Count);
                             list.Add(tile);
                         }
@@ -1135,7 +1187,7 @@ namespace CWMultiplayer
                     //Color Cursed Tiles
                     foreach (Tile tile in gridData.GetAvailableTiles())
                     {
-                        if(tile.MyGlyphType != GlyphType.Letter)
+                        if(tile.IsCursed())
                         {
                             tile.SetTileType(new TileType[] { TileType.Blue, TileType.Cactus, TileType.Gold, TileType.Green, TileType.Pink, TileType.Purple, TileType.Red, TileType.Void, TileType.White, TileType.Blue, TileType.Red, TileType.Void }[Random.Range(0,12)]);
                             list.Add(tile);
@@ -1307,10 +1359,13 @@ namespace CWMultiplayer
                             {
                                 if(item != null && NatBoss.unavailableItemsList.Select(i => i.GetType()).Contains(item.MyItem.GetType()))
                                 {
-                                    SDFImage[] itemImages = item.GetComponentsInChildren<nickeltin.SDF.Runtime.SDFImage>();
-                                    foreach (SDFImage itemImage in itemImages)
+                                    SDFImage stampOutline = item.GetComponentInChildren<nickeltin.SDF.Runtime.SDFImage>();
+                                    stampOutline.color = UnityEngine.Color.black;
+                                    
+                                    Image[] itemImages = item.GetComponentsInChildren<Image>();
+                                    foreach(Image itemImage in itemImages)
                                     {
-                                        if(itemImage != null) itemImage.color = UnityEngine.Color.black;
+                                        itemImage.color = UnityEngine.Color.black;
                                     }
 
                                     if(debugMode) MelonLogger.Msg("Found Item: " + item.MyItem.Name);
@@ -1343,8 +1398,6 @@ namespace CWMultiplayer
             if(money < 0) money = 100000;
             GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.TotalCashEarned += money;
             GameStatics.GetPlayer().ChangeMoney(money);
-            MegMoney += money;
-            MelonLogger.Msg("Gained $" + money);
         }
         
         //Meg's Money
@@ -1355,9 +1408,11 @@ namespace CWMultiplayer
             {
                 if(____remainingGrids > 0) return;
 
-                steps[0].EarningsBreakdown["Meg's Income"] = MegMoney;
-                MelonLogger.Msg(MegMoney);
-                MegMoney = 0;
+                int income = (int)(ReceivedInfo.opponentHighscore.Score / Mathf.Pow(4, GameStatics.GetPlayer().CurrentRunProgress.GetStage()));
+                steps[0].EarningsBreakdown["Meg's Income"] = income;
+                SetMegMoney(income);
+
+                if(debugMode) MelonLogger.Msg(ReceivedInfo.opponentHighscore + " | " + income);
             }
         }
 
@@ -1380,7 +1435,7 @@ namespace CWMultiplayer
                 {
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                    __result = "For each highest WORD SCORE this encounter, meg gets money.";
+                    __result = "Meg gets money based on your highest scoring word this encounter.";
                 }
             }
             [HarmonyPatch(typeof(HumanBoyBoss), "GetDescription")]
@@ -1400,20 +1455,83 @@ namespace CWMultiplayer
                 {
                     if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
-                    __result = "Colours all cursed tiles randomly. Any coloured <color=red>RED</color>, <color=blue>BLUE</color>, or <color=\"#36106c\">VOID</color> are replaced with Consonants";
+                    __result = string.Format("Colors all cursed tiles randomly. Any coloured <#3C83C8>RED</color>, <#D2504D>BLUE</color>, or <#6F2E87>VOID</color> are replaced with Consonants", new object[]
+                    {
+                        Tile.ChangeTileTypeToString(TileType.Blue),
+                        Tile.ChangeTileTypeToString(TileType.Void)
+                    });
                 }
             }
             #endregion
+        
+        //Descs For Boss Effects On Select Screen
+        [HarmonyPatch(typeof(Character), "GetDescription")]
+        public static class CharEffect_Patch
+        {
+            public static void Postfix(ref string __result, ref Character __instance)
+            {
+                if(__instance.GetType() == typeof(PrismaticBean) || CursedUI.lobbyID == CSteamID.Nil) return;
+
+                BossModifier bossModifier = new RandomiseItemOrder();
+
+                if(__instance.GetType() == typeof(WetDennis))
+                    bossModifier = new RodmanBoss();
+                else if(__instance.GetType() == typeof(NinaNix))
+                    bossModifier = new NinaNixBoss();
+                else if(__instance.GetType() == typeof(HayleyBayles))
+                    bossModifier = new HayleyBaylesBoss();
+                else if(__instance.GetType() == typeof(SamGambit))
+                    bossModifier = new SamGambitBoss();
+                else if(__instance.GetType() == typeof(BonesTheDog))
+                    bossModifier = new BonesBoss();
+                else if(__instance.GetType() == typeof(Octacles))
+                    bossModifier = new OctaclesBoss();
+                else if(__instance.GetType() == typeof(NathaServo))
+                    bossModifier = new NatBoss();
+                else if(__instance.GetType() == typeof(SandySaguaro))
+                    bossModifier = new SandySaguaroBoss();
+                else if(__instance.GetType() == typeof(Spike))
+                    bossModifier = new CretaceousMegBoss();
+                else if(__instance.GetType() == typeof(SockHead))
+                    bossModifier = new HumanBoyBoss();
+                else if(__instance.GetType() == typeof(PrismaticBean))
+                    bossModifier = new PrismaticBeanBoss();
+                else if(debugMode) MelonLogger.Msg("Option Is An Invalid Character");
+                
+                if(bossModifier.GetType() == typeof(CretaceousMegBoss))
+                {
+                    __result = "As a boss:\n\n" + "Meg gets money based on the foe's highest scoring word for the encounter.";
+                    return;
+                }
+                if(bossModifier.GetType() == typeof(HumanBoyBoss))
+                {
+                    __result = "As a boss:\n\n" + "Decreases all Stickers by 1 Level for the fight (Minimum level: 1).";
+                    return;
+                }
+
+                bossModifier.SetFloorAdjustedModification(0, false);
+                __result = "As a boss:\n\n" + bossModifier.GetDescription();
+            }
+        }
+        [HarmonyPatch(typeof(PrismaticBean), "GetDescription")]
+        public static class BeansJustHadToBeDifferent_Patch
+        {
+            public static void Postfix(ref string __result)
+            {
+                if(CursedUI.lobbyID == CSteamID.Nil) return;
+                __result = "As a boss:\n\n" + "Colours all cursed tiles randomly. Any coloured <color=red>RED</color>, <color=blue>BLUE</color>, or <color=purple>VOID</color> are replaced with Consonants.";
+            }
+        }
         #endregion
     }
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = false;
+        public static bool hasOpponent = true;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = null;
+        public static Character foeCharacter = new PrismaticBean();
 
         public static void ResetInfo()
         {
@@ -1549,13 +1667,6 @@ namespace CWMultiplayer
                 if(lobbyDataList[0] != myPlayerPacket.playerName)
                 {
                     ReceivedInfo.opponentIsInBoss = lobbyDataList[1] == "True";
-                    //Meg Boss Money
-                    if(highScoreLong > ReceivedInfo.opponentHighscore.Score && CursedNetworking.myPlayerPacket.myCharacterName == new Spike().GetName() && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss)
-                    {
-                        if(MultiplayerManager.debugMode) MelonLogger.Msg("Updating Meg Money");
-                        int money = (int)highScoreLong / (GameStatics.GetPlayer().CurrentRunProgress.GetStage() * GameStatics.GetPlayer().CurrentRunProgress.GetStage() * 50);
-                        MultiplayerManager.SetMegMoney(money);
-                    }
 
                     ReceivedInfo.opponentHighscore = new ScorePacket(highScoreLong);
                     ReceivedInfo.opponentHealth = health;
@@ -1733,33 +1844,33 @@ namespace CWMultiplayer
             TextMeshProUGUI showLobbyButtonText = showLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(showLobbyButtonText != null)
             {
-                showLobbyButtonText.text = "LOBBY";
+                showLobbyButtonText.text = "OPEN";
                 showLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hideLobbyButtonText = hideLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(hideLobbyButtonText != null)
             {
-                hideLobbyButtonText.text = "LOBBY";
+                hideLobbyButtonText.text = "CLOSE";
                 hideLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI hostLobbyButtonText = hostLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(hostLobbyButtonText != null)
             {
-                hostLobbyButtonText.text = "HOST LOBBY";
+                hostLobbyButtonText.text = "HOST";
                 hostLobbyButtonText.fontSize = 80;
                 hostLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI lobbyButtonText = lobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(lobbyButtonText != null)
             {
-                lobbyButtonText.text = "FIND LOBBY";
+                lobbyButtonText.text = "JOIN";
                 lobbyButtonText.fontSize = 85;
                 lobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
             TextMeshProUGUI joinLobbyButtonText = joinLobbyButtonTextObj.GetComponent<TextMeshProUGUI>();
             if(joinLobbyButtonText != null)
             {
-                joinLobbyButtonText.text = "JOIN";
+                joinLobbyButtonText.text = "ENTER";
                 joinLobbyButtonText.fontSize = 75;
                 joinLobbyButtonText.alignment = TextAlignmentOptions.Center;
             }
@@ -1812,7 +1923,7 @@ namespace CWMultiplayer
             if(hostButtonRect != null)
             {
                 hostButtonRect.localPosition = new Vector3(0, Screen.height / 10, 0);
-                hostButtonRect.sizeDelta = new Vector2(600, 150);
+                hostButtonRect.sizeDelta = new Vector2(300, 150);
             }
                 UnityEngine.UI.Image hostButtonImg = hostButtonObj.GetComponent<Image>();
                 if(hostButtonImg != null)
@@ -1822,13 +1933,13 @@ namespace CWMultiplayer
                 RectTransform hostTextRect = hostLobbyButtonTextObj.GetComponent<RectTransform>();
                 if(hostTextRect != null)
                 {
-                    hostTextRect.sizeDelta = new Vector2(500, 150);
+                    hostTextRect.sizeDelta = new Vector2(300, 150);
                 }
             RectTransform lobbyButtonRect = lobbyButtonObj.GetComponent<RectTransform>();
             if(lobbyButtonRect != null)
             {
                 lobbyButtonRect.localPosition = new Vector3(0, -1 * Screen.height / 10, 0);
-                lobbyButtonRect.sizeDelta = new Vector2(600, 150);
+                lobbyButtonRect.sizeDelta = new Vector2(300, 150);
             }
                 UnityEngine.UI.Image lobbyButtonImg = lobbyButtonObj.GetComponent<Image>();
                 if(lobbyButtonImg != null)
@@ -1838,7 +1949,7 @@ namespace CWMultiplayer
                 RectTransform lobbyTextRect = lobbyButtonTextObj.GetComponent<RectTransform>();
                 if(lobbyTextRect != null)
                 {
-                    lobbyTextRect.sizeDelta = new Vector2(600, 150);
+                    lobbyTextRect.sizeDelta = new Vector2(300, 150);
                 }
             RectTransform backButtonRect = backButtonObj.GetComponent<RectTransform>();
             if(backButtonRect != null)
@@ -2345,8 +2456,15 @@ namespace CWMultiplayer
         }
         public override string GetDescription()
         {
-            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "START OF GRID: All tiles are randomized to be <color=red>RED</color>, <color=blue>BLUE</color>, or COLOURLESS.\nTiles adjacent to <color=red>RED</color> or <color=blue>BLUE</color> tiles get -" + FloorAdjustedModification + " BASE SCORE.";
+            if(MultiplayerManager.encounterController != null)    
+                SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return string.Format("All tiles are randomized to be {0}, {1}, or {2}.\nTiles adjacent to {0} or {1} tiles get -{3} BASE SCORE.", new object[]
+            {
+                "<#D2504D>RED</color>",
+                "<#3C83C8>BLUE</color>",
+                Tile.ChangeTileTypeToString(TileType.Normal),
+                FloorAdjustedModification
+            });
         }
         public override Sprite GetBossSprite()
         {
@@ -2538,8 +2656,9 @@ namespace CWMultiplayer
 
         public override string GetDescription()
         {
-            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "START OF GRID: All cursed tiles are replaced with 1 random curse type.";
+            if(MultiplayerManager.encounterController != null)    
+                SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return "All cursed tiles are replaced with 1 random curse type.";
         }
         public override Sprite GetBossSprite()
         {
@@ -2580,8 +2699,9 @@ namespace CWMultiplayer
 
         public override string GetDescription()
         {
-            SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-            return "START OF GRID: Disables " + FloorAdjustedModification + " random " + (FloorAdjustedModification == 1 ? "item" : "items") + " for the grid.";
+            if(MultiplayerManager.encounterController != null)    
+                SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+            return "Disables " + FloorAdjustedModification + " random " + (FloorAdjustedModification == 1 ? "item" : "items") + " for the grid.";
         }
         public override Sprite GetBossSprite()
         {
@@ -2625,4 +2745,15 @@ namespace CWMultiplayer
         }
     }
     #endregion
+
+    //Challenge For Multiplayer To Be Set To
+    public class Multiplayer : ChallengeRun
+    {
+        public Multiplayer()
+        {
+            this.ChallengeName = "Multiplayer";
+            this.Description = "Play With Other People!";
+            this.EliteQuest = true;
+        }
+    }
 }
