@@ -18,6 +18,7 @@ using UnityEngine.SceneManagement;
 
 /// To do:
 /// 1. Fix Nat's Interactions With Inventory Visuals
+/// 2. Track ReceivedInfo.foeBoss instead of foeCharacter
 /// 
 /// OPTIONAL
 /// 3. Add wait before starting boss battle?
@@ -517,6 +518,7 @@ namespace CWMultiplayer
                 }
             }
         }
+        
         //Flip Sprite
         [HarmonyPatch(typeof(EnemyVisualController), "PopulateEnemyAnimator")]
         public static class FlipBosses_Patch
@@ -1527,11 +1529,11 @@ namespace CWMultiplayer
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = true;
+        public static bool hasOpponent = false;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static Character foeCharacter = new PrismaticBean();
+        public static Character foeCharacter = null;
 
         public static void ResetInfo()
         {
