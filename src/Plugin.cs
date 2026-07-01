@@ -20,10 +20,11 @@ using UnityEngine.SceneManagement;
 /// 1. Fix Nat's Interactions With Inventory Visuals
 /// 2. Make A Mods Check
 /// 3. FIX MEG!!!
+/// 4. Make A More Robust Way For Boss Score Comparison (fist(false) -> second(false) -> first(0) -> second(0)?)
 /// 
 /// OPTIONAL
-/// 3. Add wait before starting boss battle?
-/// 4. Make Time Limit From One Boss To The Next (override speedrun timer to do so, start when the foe has finished)
+/// 1. Add wait before starting boss battle?
+/// 2. Make Time Limit From One Boss To The Next (override speedrun timer to do so, start when the foe has finished)
 
 
 namespace CWMultiplayer
@@ -129,8 +130,10 @@ namespace CWMultiplayer
                     return;
                 }
 
+
                 //Always Do Things
                 CursedUI.UpdateHearts();
+                ResetAfterBoss();
 
                 encounterController = __instance;
                 encounterSummaryDisplayController = ____encounterSummaryDisplayController;
@@ -149,6 +152,15 @@ namespace CWMultiplayer
                         encounterController.SetTotalTarget((int)ReceivedInfo.opponentHighscore.Score);
                 }
             }
+        }
+        public static void ResetAfterBoss()
+        {
+            if(CursedNetworking.myPlayerPacket.health <= 0)
+            {
+                ReceivedInfo.ResetInfo();
+                CursedNetworking.myPlayerPacket.ResetPacket();
+            }
+            CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
         }
         [HarmonyPatch(typeof(EncounterController), "SubmitWord", new System.Type[] { typeof(List<TileSelection>), typeof(List<string>) })]
         public static class SubmitWord_Patch
@@ -275,7 +287,6 @@ namespace CWMultiplayer
                         }
 
                         ReceivedInfo.opponentHighscore = new ScorePacket(0);
-                        _ = AsyncReset();
                     }
 
                     currentRemainingTarget = ____remainingTarget;
@@ -287,17 +298,7 @@ namespace CWMultiplayer
                     MelonLogger.Msg(e);
                 }
             }
-            private static async Task AsyncReset()
-            {
-                await Task.Delay(10000);
-                
-                if(CursedNetworking.myPlayerPacket.health <= 0)
-                {
-                    ReceivedInfo.ResetInfo();
-                    CursedNetworking.myPlayerPacket.ResetPacket();
-                }
-                CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
-            }
+
         }
 
         //Skip to the end if you won
@@ -657,9 +658,16 @@ namespace CWMultiplayer
         {
             public static void Prefix()
             {
-                if(GameStatics.Challenge == null && ReceivedInfo.hasOpponent)
+                if(!ReceivedInfo.hasOpponent) return;
+                
+                _ = AsyncSetChallenge();
+            }
+            private static System.Collections.IEnumerable AsyncSetChallenge()
+            {
+                yield return null;
+                if(GameStatics.GetPlayer()?.CurrentRunProgress != null && GameStatics.GetPlayer()?.CurrentRunProgress.Challenge == null)
                 {
-                    GameStatics.Challenge = new Multiplayer();
+                    GameStatics.GetPlayer().CurrentRunProgress.Challenge = new Multiplayer();
                 }
             }
         }
@@ -702,69 +710,9 @@ namespace CWMultiplayer
             public static void Postfix(ref List<System.Type> ____stickerPool, ref List<System.Type> ____stampPool)
             {
                 ____stickerPool.RemoveAll(item => item == typeof(DivingMask));
-                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies) || item == typeof(Receipt));
+                ____stampPool.RemoveAll(item => item == typeof(BlessingOfTheFairies));
             }
         }
-        //Nerf Cursed VHS
-            #region Cursed VHS
-            [HarmonyPatch(typeof(CursedVHS), MethodType.Constructor)]
-            public static class CursedVHS_Patch
-            {
-                public static void Postfix(ref List<UpgradeableComponent> ___UpgradeableComponents, ref ItemRarity ___Rarity, ref int ___Cost, ref List<ItemTag> ___Tags, ref List<TileType> ___RelevantColours)
-                {
-                    ___UpgradeableComponents = new List<UpgradeableComponent>();
-                    ___Rarity = ItemRarity.Rare;
-                }
-            }
-                //Fix Description
-                [HarmonyPatch(typeof(CursedVHS), "GetDescription")]
-                public static class CursedVHS_Description_Patch
-                {
-                    public static bool Prefix(ref string __result)
-                    {
-                        __result = "START OF GRID: Scatters a level 1 item from the cursed item pool for each curse type on the grid";
-                        return false;
-                    }
-                }
-                //Fix Effect
-                [HarmonyPatch(typeof(CursedVHS), "ApplyStartOfGridEffect", new System.Type[] { typeof(GridData), typeof(int), typeof(int), typeof(List<HistoricWord>), typeof(List<BoardGenVizInfo>), typeof(bool) })]
-                public static class CursedVHS_Effect_Patch
-                {
-                    public static bool Prefix(ref GridData __result, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps, ref CursedVHS __instance)
-                    {
-                        List<Tile> list = new List<Tile>();
-                        List<Tile> list2 = new List<Tile>();
-                        List<CurseType> list3 = new List<CurseType>();
-                        foreach (Tile tile in gridData.GetAvailableTiles())
-                        {
-                            foreach (CurseType curseType in tile.GetCurseTypes())
-                            {
-                                if (!list3.Contains(curseType) && curseType != CurseType.None)
-                                {
-                                    list2.Add(tile);
-                                    list3.Add(curseType);
-                                }
-                            }
-                        }
-                        for (int i = 0; i < list3.Count; i++)
-                        {
-                            Tile tileForItemScatter = GridUtility.Singleton.GetTileForItemScatter(gridData, TileType.Normal, GlyphType.ScatteredItem, null, false);
-                            if (tileForItemScatter != null)
-                            {
-                                tileForItemScatter.SetScatteredItem(ScatteredItemPools.GetRandomCursedBuildItem());
-                                list.Add(tileForItemScatter);
-                            }
-                        }
-                        if (list.Count > 0)
-                        {
-                            vizSteps.Add(new BoardGenVizInfo(gridData, __instance, list, false, null, true, false, false, vizSteps[vizSteps.Count - 1].PlayerConsumableTiles));
-                        }
-                        __result = gridData;
-
-                        return false;
-                    }
-                }
-            #endregion
         #endregion
 
         #region Other Stuff
@@ -891,6 +839,8 @@ namespace CWMultiplayer
         {
             public static void Postfix()
             {
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+
                 if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(HumanBoyBoss)) && !ReceivedInfo.noBossEffects)
                 {
                     if(isDowngraded) return;
@@ -915,6 +865,8 @@ namespace CWMultiplayer
         {
             public static void Prefix()
             {
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+                
                 if(isDowngraded)
                 {
                     isDowngraded = false;
@@ -938,6 +890,8 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || ReceivedInfo.foeBoss == null) return;
 
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+                
                 if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(SamGambitBoss))
                 {
                     if(debugMode) MelonLogger.Msg("Vs Sam");
@@ -978,6 +932,8 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+
                 try
                 {
                     if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && bossModifiers.Select(modifier => modifier.GetType()).Contains(typeof(NatBoss)))
@@ -1002,6 +958,8 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref List<Item> __result)
             {
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+
                 try
                 {
                     if(ReceivedInfo.hasOpponent && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
@@ -1022,7 +980,7 @@ namespace CWMultiplayer
             private static List<BossModifier> heldModifiers = new List<BossModifier>();
             public static void Prefix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps)
             {
-                if(ReceivedInfo.hasOpponent && ReceivedInfo.noBossEffects) bossModifiers = new List<BossModifier>();
+                if(ReceivedInfo.hasOpponent && ReceivedInfo.noBossEffects || CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) bossModifiers = new List<BossModifier>();
                 if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
 
                 //Rodman
@@ -1170,19 +1128,28 @@ namespace CWMultiplayer
 
                 //Nat In Pre-Grid
 
-                //Sandy Is The Same
+                //Sandy Is Defensive
                 //Meg Is Defensive
                 //Human Boy Is The Same
 
                 //remove boss modifiers for custom boss effect guys
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SandySaguaroBoss)))
+                {
+                    if(debugMode) MelonLogger.Msg("Vs Sandy");
+                    heldModifiers.Add(bossModifiers.FirstOrDefault(modifier => modifier.GetType() == typeof(SandySaguaroBoss)));
+                    bossModifiers.RemoveAll(modifier => modifier.GetType() == typeof(SandySaguaroBoss));
+                }
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
                 {
+                    if(debugMode) MelonLogger.Msg("Vs Beans");
+
                     heldModifiers.Add(bossModifiers.FirstOrDefault(modifier => modifier.GetType() == typeof(PrismaticBeanBoss)));
                     bossModifiers.RemoveAll(modifier => modifier.GetType() == typeof(PrismaticBeanBoss));
                 }
             }
             public static void Postfix(ref List<BossModifier> bossModifiers, ref GridData gridData, ref List<BoardGenVizInfo> vizSteps)
             {
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
                 foreach(var modifier in heldModifiers)
                 {
                     bossModifiers.Add(modifier);
@@ -1191,8 +1158,6 @@ namespace CWMultiplayer
                 
                 if(bossModifiers.Select(t => t.GetType()).Contains(typeof(PrismaticBeanBoss)))
                 {
-                    if(debugMode) MelonLogger.Msg("Vs Beans");
-
                     List<Tile> list = new List<Tile>();
                     List<Vector2Int> tileCoords = new List<Vector2Int>();
 
@@ -1242,6 +1207,7 @@ namespace CWMultiplayer
         {
             public static void Postfix(ref bool isIncludingInventory, ref List<Item> __result)
             {
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
                 try
                 {
                     if(isIncludingInventory && encounterController != null && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && encounterController.GetBossModifiers().Select(m => m.GetType()).Contains(typeof(NatBoss)))
@@ -1262,6 +1228,7 @@ namespace CWMultiplayer
             public static void Postfix(ref ScoreCalcVizInfo __result, ref BossModifier bossModifier, ref List<TileSelection> tiles)
             {
                 if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
 
                 if(bossModifier is NinaNixBoss)
                 {
@@ -1290,6 +1257,8 @@ namespace CWMultiplayer
             public static void Postfix(ref GridUtilitySingleton __instance, ref List<TileSelection> __result, ref GridData gridData, ref TileSelectionManager tileSelectionManager, ref List<Tile> currentTiles)
             {
                 if(!ReceivedInfo.hasOpponent || (encounterController != null && !encounterController.GetBossModifiers().Select(t => t.GetType()).Contains(typeof(SamGambitBoss)))) return;
+
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
 
                 try
                 {
@@ -1329,6 +1298,8 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent) return;
                 
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
+
                 try
                 {
                     Player player = GameStatics.GetPlayer();
@@ -1360,6 +1331,7 @@ namespace CWMultiplayer
             {
                 if(!ReceivedInfo.hasOpponent) return;
 
+                if(CursedNetworking.myPlayerPacket.myCharacterName == new SandySaguaro().GetName()) return;
                 try
                 {
                     Player player = GameStatics.GetPlayer();
@@ -1405,21 +1377,6 @@ namespace CWMultiplayer
                 }
             }
         }
-        //Meg's Money
-        [HarmonyPatch(typeof(EncounterController), "ShowScoreCalculation", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(ScorePacket), typeof(ScorePacket), typeof(List<Tile>), typeof(System.Collections.IEnumerator) })]
-        public static class MegDoesTaxes_Patch
-        {
-            public static void Prefix(ref List<ScoreCalcVizInfo> steps, ref int ____remainingGrids)
-            {
-                if(____remainingGrids > 0 || ReceivedInfo.foeBoss?.GetType() != typeof(CretaceousMegBoss)) return;
-
-                int income = (int)ReceivedInfo.opponentHighscore.Score;
-                SetMegMoney(income);
-                steps[0].EarningsBreakdown["Meg's Income"] = income;
-
-                if(debugMode) MelonLogger.Msg(ReceivedInfo.opponentHighscore + " | " + income);
-            }
-        }
         public static void SetMegMoney(int money)
         {
             if(money < 0) money = 100000;
@@ -1440,6 +1397,16 @@ namespace CWMultiplayer
 
         //Descs For Bosses That Already Exist
             #region Desc Overrides
+            [HarmonyPatch(typeof(SandySaguaroBoss), "GetDescription")]
+            public static class SandySaguaroDesc_Patch
+            {
+                public static void Postfix(ref string __result)
+                {
+                    if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects) return;
+
+                    __result = "Boss effects are disabled for Sandy.";
+                }
+            }
             [HarmonyPatch(typeof(CretaceousMegBoss), "GetDescription")]
             public static class MegBossDesc_Patch
             {
@@ -1496,6 +1463,11 @@ namespace CWMultiplayer
                     }
                 }
 
+                if(bossModifier.GetType() == typeof(SandySaguaroBoss))
+                {
+                    __result = "As a boss:\n\n" + "Boss effects are disabled for Sandy.";
+                    return;
+                }
                 if(bossModifier.GetType() == typeof(CretaceousMegBoss))
                 {
                     __result = "As a boss:\n\n" + "Meg gets money based on the foe's highest scoring word for the encounter.";
