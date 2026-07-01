@@ -98,8 +98,6 @@ namespace CWMultiplayer
                 {
                     if(____bossModifiers.Count > 0)
                     {
-                        if(____bossModifiers[0].GetType() == typeof(SamGambitBoss)) SamGambitBoss.RandomizeChessPiece();
-
                         CursedNetworking.myPlayerPacket.UpdatePacket(true, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
                     }
                     else
@@ -1075,6 +1073,11 @@ namespace CWMultiplayer
                 }
 
                 //Sam Is In VerifyTileSelection
+                if(bossModifiers.Select(t => t.GetType()).Contains(typeof(SamGambitBoss)))
+                {
+                    if(debugMode) MelonLogger.Msg("Vs Sam");
+                    SamGambitBoss.RandomizeChessPiece();
+                }
 
                 //Bones In Scoring
 
