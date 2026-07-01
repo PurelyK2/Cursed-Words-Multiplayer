@@ -18,6 +18,8 @@ using UnityEngine.SceneManagement;
 
 /// To do:
 /// 1. Fix Nat's Interactions With Inventory Visuals
+/// 2. Make A Mods Check
+/// 3. FIX MEG!!!
 /// 
 /// OPTIONAL
 /// 3. Add wait before starting boss battle?
@@ -41,7 +43,6 @@ namespace CWMultiplayer
         public override void OnInitializeMelon()
         {
             CursedNetworking.SetUpNetworking();
-            if(debugMode) MelonLogger.Msg("Loaded Multiplayer Mod");
 
             //For connecting custom characters
             List<MelonMod> multCompatableMods = MelonMod.RegisteredMelons.Where(mod => mod.Info.Name != "Multiplayer Mod").ToList();
@@ -61,6 +62,7 @@ namespace CWMultiplayer
                     MelonLogger.Msg("Added \"" + bossModifierType.Name + "\" To Boss List");
                 }
             }
+            if(debugMode) MelonLogger.Msg("Loaded Multiplayer Mod");
         }
         public override void OnApplicationQuit()
         {
@@ -96,6 +98,8 @@ namespace CWMultiplayer
                 {
                     if(____bossModifiers.Count > 0)
                     {
+                        if(____bossModifiers[0].GetType() == typeof(SamGambitBoss)) SamGambitBoss.RandomizeChessPiece();
+
                         CursedNetworking.myPlayerPacket.UpdatePacket(true, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health);
                     }
                     else
@@ -158,10 +162,6 @@ namespace CWMultiplayer
             }
             public static bool Prefix(ref int ____remainingGrids, ref EncounterController __instance, ref List<TileSelection> tiles, ref List<string> words, ref GridData ____gridData, ref List<HistoricWord> ____previousWords)
             {
-                BonesBoss bones = new BonesBoss();
-                bones.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
-                BonesBoss.wordScoreTaken += bones.FloorAdjustedModification * tiles.Count;
-                
                 if(!ReceivedInfo.hasOpponent || GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType != NodeType.Boss) return true;
 
                 try
@@ -221,6 +221,10 @@ namespace CWMultiplayer
                 CursedUI.overrideWaitingButtonObj.SetActive(false);
                 CursedUI.waitingTextObj.SetActive(false);
 
+                BonesBoss bones = new BonesBoss();
+                bones.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
+                BonesBoss.wordScoreTaken += bones.FloorAdjustedModification * tiles.Count;
+                
                 return true;
             }
             public static void Postfix(ref ScorePacket ____remainingTarget, ref int ____totalGridsPerRound, ref int ____remainingGrids, ref EncounterSummaryDisplayController ____encounterSummaryDisplayController)
@@ -247,6 +251,7 @@ namespace CWMultiplayer
                         else if(ReceivedInfo.opponentHighscore == CursedNetworking.myPlayerPacket.highScore)
                         {
                             if(debugMode) MelonLogger.Msg("You Tied And Both Lose A Life!");
+                            CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
                         }
                         else
                         {
@@ -267,6 +272,8 @@ namespace CWMultiplayer
                         {
                             if(debugMode) MelonLogger.Msg("Game Over! You lose!");
                             ____remainingTarget = new ScorePacket(mostRecentScorePacket.Score + ReceivedInfo.opponentHighscore.Score);
+                            ReceivedInfo.ResetInfo();
+                            CursedNetworking.myPlayerPacket.ResetPacket();
                         }
 
                         ReceivedInfo.opponentHighscore = new ScorePacket(0);
@@ -307,6 +314,8 @@ namespace CWMultiplayer
                     {
                         __result = true;
                         if(debugMode) MelonLogger.Msg("YOU WON! (Tell K2 If The Victory Screen Didn't Show Up)");
+                        ReceivedInfo.ResetInfo();
+                        CursedNetworking.myPlayerPacket.ResetPacket();
                     }
                 }
             }
@@ -361,9 +370,12 @@ namespace CWMultiplayer
 
                 try
                 {
-                    CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
-                    CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
-                    if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
+                    if(CursedNetworking.myPlayerPacket.myCharacterName != ____activeCharacter.GetName())
+                    {
+                        CursedNetworking.myPlayerPacket.myCharacterName = ____activeCharacter.GetName();
+                        CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
+                        if(debugMode) MelonLogger.Msg("Updated Player Character to: " + ____activeCharacter.GetName());
+                    }
                     BonesBoss.wordScoreTaken = 0;
 
                     if(ReceivedInfo.foeBoss == null)
@@ -410,7 +422,17 @@ namespace CWMultiplayer
                 }
             }
         }
-        
+        [HarmonyPatch(typeof(Animator), "SetTrigger", new System.Type[] { typeof(string) })]
+        public static class BattleStart_Patch
+        {
+            public static void Prefix(ref string name, ref Animator __instance)
+            {
+                if(!ReceivedInfo.hasOpponent) return;
+
+                if(name == "Select") name = "Attack";
+            }
+        }
+
         //BossCharacter Shows Up In Non-Bosses
         [HarmonyPatch(typeof(EncounterSummaryDisplayController), "SetInitialDisplayedTargetValue", new System.Type[] { typeof(ScorePacket) })]
         public static class OlWesternStareDown_Patch
@@ -656,6 +678,8 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref ScorePacket ____remainingTarget, ref int ____remainingGrids)
             {
+                if(!ReceivedInfo.hasOpponent) return;
+
                 if(____remainingGrids <= 0 && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType != NodeType.Boss)
                 {
                     if(____remainingTarget > new ScorePacket(0L) && CursedNetworking.myPlayerPacket.health > 1)
@@ -928,7 +952,6 @@ namespace CWMultiplayer
 
                 if(GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss && ReceivedInfo.foeBoss.GetType() == typeof(SamGambitBoss))
                 {
-                    SamGambitBoss.RandomizeChessPiece();
                     SamGambitBoss samGambitBoss = new SamGambitBoss();
                     samGambitBoss.SetFloorAdjustedModification(GameStatics.GetPlayer().CurrentRunProgress.GetStage() - 1, false);
                     ____bossModTMP.text = samGambitBoss.GetDescription();
@@ -1371,6 +1394,21 @@ namespace CWMultiplayer
                 }
             }
         }
+        //Meg's Money
+        [HarmonyPatch(typeof(EncounterController), "ShowScoreCalculation", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(ScorePacket), typeof(ScorePacket), typeof(List<Tile>), typeof(System.Collections.IEnumerator) })]
+        public static class MegDoesTaxes_Patch
+        {
+            public static void Prefix(ref List<ScoreCalcVizInfo> steps, ref int ____remainingGrids)
+            {
+                if(____remainingGrids > 0 || ReceivedInfo.foeBoss?.GetType() != typeof(CretaceousMegBoss)) return;
+
+                int income = (int)ReceivedInfo.opponentHighscore.Score;
+                SetMegMoney(income);
+                steps[0].EarningsBreakdown["Meg's Income"] = income;
+
+                if(debugMode) MelonLogger.Msg(ReceivedInfo.opponentHighscore + " | " + income);
+            }
+        }
         public static void SetMegMoney(int money)
         {
             if(money < 0) money = 100000;
@@ -1378,22 +1416,7 @@ namespace CWMultiplayer
             GameStatics.GetPlayer().ChangeMoney(money);
         }
         
-        //Meg's Money
-        [HarmonyPatch(typeof(EncounterController), "ShowScoreCalculation", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(ScorePacket), typeof(ScorePacket), typeof(List<Tile>), typeof(System.Collections.IEnumerator) })]
-        public static class MegDoesTaxes_Patch
-        {
-            public static void Prefix(ref List<ScoreCalcVizInfo> steps, ref int ____remainingGrids)
-            {
-                if(____remainingGrids > 0) return;
-
-                int income = (int)(ReceivedInfo.opponentHighscore.Score / Mathf.Pow(4, GameStatics.GetPlayer().CurrentRunProgress.GetStage()));
-                steps[0].EarningsBreakdown["Meg's Income"] = income;
-                SetMegMoney(income);
-
-                if(debugMode) MelonLogger.Msg(ReceivedInfo.opponentHighscore + " | " + income);
-            }
-        }
-
+        
         //Stop Human Boy If You Should
         [HarmonyPatch(typeof(HumanBoyBoss), "GetItemToSteal")]
         public static class SwiperNoSwiping_Patch
@@ -1459,7 +1482,6 @@ namespace CWMultiplayer
                     if(modifier.CharacterToUnlock == __instance.GetType())
                     {
                         bossModifier = modifier;
-                        MelonLogger.Msg("Found Character: " + bossModifier.Name);
                     }
                 }
 
@@ -1498,13 +1520,12 @@ namespace CWMultiplayer
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = false;
+        public static bool hasOpponent = true;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static BossModifier foeBoss = null;
-        public static List<System.Type> AllBosses = new List<System.Type>
-        {
+        public static BossModifier foeBoss = new SamGambitBoss();
+        public static List<System.Type> AllBosses = new List<System.Type> {
             typeof(RodmanBoss),
             typeof(NinaNixBoss),
             typeof(HayleyBaylesBoss),
@@ -1520,7 +1541,6 @@ namespace CWMultiplayer
 
         public static void ResetInfo()
         {
-            hasOpponent = false;
             opponentIsInBoss = false;
             opponentHighscore = new ScorePacket(0);
             opponentHealth = 3;
@@ -1531,7 +1551,7 @@ namespace CWMultiplayer
             foreach (System.Type bossType in AllBosses)
             {
                 BossModifier modifier = (BossModifier)System.Activator.CreateInstance(bossType);
-                if(modifier.Name == characterName)
+                if(modifier.Name.Trim() == characterName.Trim())
                 {
                     foeBoss = modifier;
                     if(MultiplayerManager.debugMode) MelonLogger.Msg("Foe Is: " + modifier.Name);
@@ -2629,8 +2649,8 @@ namespace CWMultiplayer
     {
         public OctaclesBoss()
         {
-            this.Name = "Ocatcles";
-            this.PrefabFileName = "Ocatcles";
+            this.Name = "Octacles";
+            this.PrefabFileName = "Octacles";
             this.AudioPrefix = "Axolotl";
             this.SpriteFileName = new Octacles().GetArtFileName();
             this.UIColor = new Octacles().GetUIColorA();
