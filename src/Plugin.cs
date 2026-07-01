@@ -657,8 +657,10 @@ namespace CWMultiplayer
         {
             public static void Prefix()
             {
-                if(GameStatics.GetPlayer().CurrentRunProgress.Challenge == null && ReceivedInfo.hasOpponent)
-                    GameStatics.GetPlayer().CurrentRunProgress.Challenge = new Multiplayer();
+                if(GameStatics.Challenge == null && ReceivedInfo.hasOpponent)
+                {
+                    GameStatics.Challenge = new Multiplayer();
+                }
             }
         }
         //Get Score For Word
@@ -852,6 +854,12 @@ namespace CWMultiplayer
 
             CursedUI.bossEffectsToggleObj.SetActive(CursedNetworking.myPlayerPacket.playerName == "Player 1" || CursedNetworking.myPlayerPacket.playerName == "");
             CursedUI.bossEffectsToggleObj.GetComponent<Image>().color = ReceivedInfo.noBossEffects ? new UnityEngine.Color(1, 1, 1, 0.1f) : Color.white;
+        
+            //Check For Steam
+            if(!SteamAPI.Init())
+            {
+                CursedUI.showLobbyButtonObj.SetActive(false);
+            }
         }
         [HarmonyPatch(typeof(ResolutionConfigUtility), "UpdateDisplaySettings", new System.Type[] { typeof(Resolution) })]
         public static class UpdateDisplaySettings_Patch
@@ -1523,11 +1531,11 @@ namespace CWMultiplayer
     public static class ReceivedInfo
     {
         public static bool noBossEffects = false, delayScoreUpdates = false;
-        public static bool hasOpponent = true;
+        public static bool hasOpponent = false;
         public static bool opponentIsInBoss = false;
         public static ScorePacket opponentHighscore = new ScorePacket(0);
         public static int opponentHealth = 3;
-        public static BossModifier foeBoss = new SamGambitBoss();
+        public static BossModifier foeBoss = null;
         public static List<System.Type> AllBosses = new List<System.Type> {
             typeof(RodmanBoss),
             typeof(NinaNixBoss),
