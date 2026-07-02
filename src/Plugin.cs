@@ -1413,7 +1413,7 @@ namespace CWMultiplayer
             else money = (int)Mathf.Log(money, 2);
 
             earningsBreakdown["Meg's Income"] = (int)money;
-            GameStatics.GetPlayer().ChangeMoney((int)money);
+            GameStatics.GetPlayer().Money += (int)money;
 			CharacterInfoPanel.SingletonInventoryVisualController.RefreshInspect();
             if(debugMode) MelonLogger.Msg("Meg's Income: " + money);
         }
