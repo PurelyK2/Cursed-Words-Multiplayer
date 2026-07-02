@@ -38,6 +38,7 @@ namespace CWMultiplayer
         public static ScorePacket currentRemainingTarget = new ScorePacket(0);
         public static EncounterController encounterController;
         public static EncounterSummaryDisplayController encounterSummaryDisplayController;
+        public static bool finishedFirst = false;
         #endregion
         
         #region Melon Stuff
@@ -133,7 +134,6 @@ namespace CWMultiplayer
 
                 //Always Do Things
                 CursedUI.UpdateHearts();
-                ResetAfterBoss();
 
                 encounterController = __instance;
                 encounterSummaryDisplayController = ____encounterSummaryDisplayController;
@@ -153,21 +153,12 @@ namespace CWMultiplayer
                 }
             }
         }
-        public static void ResetAfterBoss()
-        {
-            if(CursedNetworking.myPlayerPacket.health <= 0)
-            {
-                ReceivedInfo.ResetInfo();
-                CursedNetworking.myPlayerPacket.ResetPacket();
-            }
-            CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
-        }
         [HarmonyPatch(typeof(EncounterController), "SubmitWord", new System.Type[] { typeof(List<TileSelection>), typeof(List<string>) })]
         public static class SubmitWord_Patch
         {
-            private static async Task AsyncronousWaiting(EncounterController encounterController, List<TileSelection> tiles, List<string> words)
+            private static System.Collections.IEnumerator AsyncronousWaiting(EncounterController encounterController, List<TileSelection> tiles, List<string> words)
             {
-                await Task.Delay(1);
+                yield return null;
                 encounterController.SubmitWord(tiles, words);
             }
             public static bool Prefix(ref int ____remainingGrids, ref EncounterController __instance, ref List<TileSelection> tiles, ref List<string> words, ref GridData ____gridData, ref List<HistoricWord> ____previousWords)
@@ -213,8 +204,13 @@ namespace CWMultiplayer
                             }
                         }
                         //Freezes Game Until Opponent Gets There (If was in boss)
-                        if(ReceivedInfo.opponentHealth > 0 && CursedNetworking.myPlayerPacket.health > 0 && (ReceivedInfo.opponentHighscore.Score == 0 || ReceivedInfo.opponentIsInBoss) && CursedNetworking.myPlayerPacket.highScore.Score > 0)
+                        if(ReceivedInfo.opponentHealth > 0 && CursedNetworking.myPlayerPacket.health > 0 && (ReceivedInfo.opponentHighscore.Score == 0 || ReceivedInfo.opponentIsInBoss) && GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType == NodeType.Boss)
                         {
+                            if(ReceivedInfo.opponentIsInBoss && !finishedFirst)
+                            {
+                                if(debugMode) MelonLogger.Msg("Opponent Is In Boss, waiting for them to finish...");
+                                finishedFirst = true;
+                            }
                             _ = AsyncronousWaiting(__instance, tiles, words);
                             return false;
                         }
@@ -286,7 +282,16 @@ namespace CWMultiplayer
                             CursedNetworking.myPlayerPacket.ResetPacket();
                         }
 
-                        ReceivedInfo.opponentHighscore = new ScorePacket(0);
+                        if(finishedFirst)
+                        {
+                            finishedFirst = false;
+                            CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
+                        }
+                        else
+                        {
+                            if(debugMode) MelonLogger.Msg("Opponent Is Scoring, Waiting...");
+                            _ = WaitForOpponentToScore();
+                        }
                     }
 
                     currentRemainingTarget = ____remainingTarget;
@@ -298,7 +303,18 @@ namespace CWMultiplayer
                     MelonLogger.Msg(e);
                 }
             }
-
+            public static System.Collections.IEnumerator WaitForOpponentToScore()
+            {
+                while(ReceivedInfo.opponentHighscore.Score != 0)
+                {
+                    yield return null;
+                }
+                if(ReceivedInfo.opponentHighscore.Score == 0)
+                {
+                    if(debugMode) MelonLogger.Msg("Opponent Is Done Scoring, Continuing...");
+                    CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), CursedNetworking.myPlayerPacket.health);
+                }
+            }
         }
 
         //Skip to the end if you won
@@ -2259,13 +2275,18 @@ namespace CWMultiplayer
             ReceivedInfo.opponentHighscore = new ScorePacket(1);
             overrideWaitingButtonObj.SetActive(false);
 
-            ReceivedInfo.opponentHealth = 3;
-            CursedNetworking.myPlayerPacket.health = 3;
 
             if(CursedNetworking.myPlayerPacket.highScore > new ScorePacket(1))
+            {
+                CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 3);
                 ReceivedInfo.opponentHealth = 4;
+            }
             else
-                CursedNetworking.myPlayerPacket.health = 4;
+            {
+                ReceivedInfo.opponentHealth = 3;
+                CursedNetworking.myPlayerPacket.UpdatePacket(false, new ScorePacket(0), 4);
+            }
+
         }
         public static void ToggleBossEffects()
         {
