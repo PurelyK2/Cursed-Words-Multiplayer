@@ -19,6 +19,7 @@ using UnityEngine.SceneManagement;
 /// To do:
 /// 1. Fix Nat's Interactions With Inventory Visuals
 /// 2. Make A Mods Check
+/// 3. Fix Selecting Characters In A Pre-Existing Lobby
 /// 
 /// OPTIONAL
 /// 1. Add wait before starting boss battle?
@@ -154,9 +155,9 @@ namespace CWMultiplayer
         [HarmonyPatch(typeof(EncounterController), "SubmitWord", new System.Type[] { typeof(List<TileSelection>), typeof(List<string>) })]
         public static class SubmitWord_Patch
         {
-            private static System.Collections.IEnumerator AsyncronousWaiting(EncounterController encounterController, List<TileSelection> tiles, List<string> words)
+            private static async Task AsyncronousWaiting(EncounterController encounterController, List<TileSelection> tiles, List<string> words)
             {
-                yield return null;
+                await Task.Delay(1);
                 encounterController.SubmitWord(tiles, words);
             }
             public static bool Prefix(ref int ____remainingGrids, ref EncounterController __instance, ref List<TileSelection> tiles, ref List<string> words, ref GridData ____gridData, ref List<HistoricWord> ____previousWords)
@@ -209,6 +210,8 @@ namespace CWMultiplayer
                                 if(debugMode) MelonLogger.Msg("Opponent Is In Boss, waiting for them to finish...");
                                 finishedFirst = true;
                             }
+
+                            CursedUI.waitingTextObj.SetActive(true);
                             _ = AsyncronousWaiting(__instance, tiles, words);
                             return false;
                         }
@@ -301,11 +304,11 @@ namespace CWMultiplayer
                     MelonLogger.Msg(e);
                 }
             }
-            public static System.Collections.IEnumerator WaitForOpponentToScore()
+            public static async Task WaitForOpponentToScore()
             {
                 while(ReceivedInfo.opponentHighscore.Score != 0)
                 {
-                    yield return null;
+                    await Task.Delay(1);
                 }
                 if(ReceivedInfo.opponentHighscore.Score == 0)
                 {
@@ -1397,20 +1400,22 @@ namespace CWMultiplayer
         {
             public static void Prefix(ref Dictionary<string, int> ____earningsBreakdown, ref int ____remainingGrids)
             {
-                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType != NodeType.Boss) return;
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType != NodeType.Boss || ReceivedInfo.foeBoss?.GetType() == typeof(SandySaguaroBoss)) return;
                 if(____remainingGrids <= 0 && CursedNetworking.myPlayerPacket.myCharacterName == new Spike().GetName())
                 {
                     SetMegMoney((int)ReceivedInfo.opponentHighscore.Score, ref ____earningsBreakdown);
                 }
             }
         }
-        public static void SetMegMoney(int money, ref Dictionary<string, int> earningsBreakdown)
+        public static void SetMegMoney(long money, ref Dictionary<string, int> earningsBreakdown)
         {
             if(money < 0) money = 100000;
-            GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.TotalCashEarned += money;
-            GameStatics.GetPlayer().ChangeMoney(money);
-            earningsBreakdown["Meg's Income"] = money;
-            if(debugMode)MelonLogger.Msg("Meg's Income: " + money);
+            else money = (int)Mathf.Log(money, 2);
+
+            earningsBreakdown["Meg's Income"] = (int)money;
+            GameStatics.GetPlayer().ChangeMoney((int)money);
+			CharacterInfoPanel.SingletonInventoryVisualController.RefreshInspect();
+            if(debugMode) MelonLogger.Msg("Meg's Income: " + money);
         }
         
 
