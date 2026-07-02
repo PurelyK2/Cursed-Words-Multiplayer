@@ -19,8 +19,6 @@ using UnityEngine.SceneManagement;
 /// To do:
 /// 1. Fix Nat's Interactions With Inventory Visuals
 /// 2. Make A Mods Check
-/// 3. FIX MEG!!!
-/// 4. Make A More Robust Way For Boss Score Comparison (fist(false) -> second(false) -> first(0) -> second(0)?)
 /// 
 /// OPTIONAL
 /// 1. Add wait before starting boss battle?
@@ -204,7 +202,7 @@ namespace CWMultiplayer
                             }
                         }
                         //Freezes Game Until Opponent Gets There (If was in boss)
-                        if(ReceivedInfo.opponentHealth > 0 && CursedNetworking.myPlayerPacket.health > 0 && (ReceivedInfo.opponentHighscore.Score == 0 || ReceivedInfo.opponentIsInBoss) && GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType == NodeType.Boss)
+                        if(CursedUI.lobbyID != CSteamID.Nil && ReceivedInfo.opponentHealth > 0 && CursedNetworking.myPlayerPacket.health > 0 && (ReceivedInfo.opponentHighscore.Score == 0 || ReceivedInfo.opponentIsInBoss) && GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType == NodeType.Boss)
                         {
                             if(ReceivedInfo.opponentIsInBoss && !finishedFirst)
                             {
@@ -1393,14 +1391,29 @@ namespace CWMultiplayer
                 }
             }
         }
-        public static void SetMegMoney(int money)
+        //Set Meg Money
+        [HarmonyPatch(typeof(EncounterController), "ShowScoreCalculation", new System.Type[] { typeof(List<ScoreCalcVizInfo>), typeof(HistoricWord), typeof(ScorePacket), typeof(ScorePacket), typeof(List<Tile>), typeof(System.Collections.IEnumerator) })]
+        public static class ScoreCalc_Patch
+        {
+            public static void Prefix(ref Dictionary<string, int> ____earningsBreakdown, ref int ____remainingGrids)
+            {
+                if(!ReceivedInfo.hasOpponent || ReceivedInfo.noBossEffects || GameStatics.GetPlayer()?.CurrentRunProgress?.CurrentNodeType != NodeType.Boss) return;
+                if(____remainingGrids <= 0 && CursedNetworking.myPlayerPacket.myCharacterName == new Spike().GetName())
+                {
+                    SetMegMoney((int)ReceivedInfo.opponentHighscore.Score, ref ____earningsBreakdown);
+                }
+            }
+        }
+        public static void SetMegMoney(int money, ref Dictionary<string, int> earningsBreakdown)
         {
             if(money < 0) money = 100000;
             GameStatics.GetPlayer().CurrentRunProgress.CurrentRunStatistics.TotalCashEarned += money;
             GameStatics.GetPlayer().ChangeMoney(money);
+            earningsBreakdown["Meg's Income"] = money;
+            if(debugMode)MelonLogger.Msg("Meg's Income: " + money);
         }
         
-        
+
         //Stop Human Boy If You Should
         [HarmonyPatch(typeof(HumanBoyBoss), "GetItemToSteal")]
         public static class SwiperNoSwiping_Patch
