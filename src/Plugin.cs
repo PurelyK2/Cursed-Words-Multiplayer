@@ -679,10 +679,13 @@ namespace CWMultiplayer
                 
                 _ = AsyncSetChallenge();
             }
-            private static System.Collections.IEnumerable AsyncSetChallenge()
+            private static async Task AsyncSetChallenge()
             {
-                yield return null;
-                if(GameStatics.GetPlayer()?.CurrentRunProgress != null && GameStatics.GetPlayer()?.CurrentRunProgress.Challenge == null)
+                while(GameStatics.GetPlayer()?.CurrentRunProgress == null)
+                {
+                    await Task.Delay(1);
+                }
+                if(GameStatics.GetPlayer().CurrentRunProgress.Challenge == null)
                 {
                     GameStatics.GetPlayer().CurrentRunProgress.Challenge = new Multiplayer();
                 }
@@ -1413,11 +1416,10 @@ namespace CWMultiplayer
             else money = (int)Mathf.Log(money, 2);
 
             earningsBreakdown["Meg's Income"] = (int)money;
-            GameStatics.GetPlayer().Money += (int)money;
-			CharacterInfoPanel.SingletonInventoryVisualController.RefreshInspect();
+            GameStatics.GetPlayer().ChangeMoney((int)money);
             if(debugMode) MelonLogger.Msg("Meg's Income: " + money);
         }
-        
+
 
         //Stop Human Boy If You Should
         [HarmonyPatch(typeof(HumanBoyBoss), "GetItemToSteal")]
