@@ -259,10 +259,12 @@ namespace CWMultiplayer
                         {
                             if(debugMode) MelonLogger.Msg("You Tied And Both Lose A Life!");
                             CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
+                            ReceivedInfo.opponentHealth -= 1;
                         }
                         else
                         {
                             if(debugMode) MelonLogger.Msg("You Won The Floor!");
+                            ReceivedInfo.opponentHealth -= 1;
                         }
 
                         if(CursedNetworking.myPlayerPacket.health > 0)
@@ -716,6 +718,13 @@ namespace CWMultiplayer
 
                         if(debugMode) MelonLogger.Msg("Welp... You Lost A Life!");
                         CursedNetworking.myPlayerPacket.UpdatePacket(CursedNetworking.myPlayerPacket.inBoss, CursedNetworking.myPlayerPacket.highScore, CursedNetworking.myPlayerPacket.health - 1);
+                    }
+                }
+                if(____remainingGrids <= 0 && GameStatics.GetPlayer().CurrentRunProgress.CurrentNodeType == NodeType.Boss)
+                {
+                    if(____remainingTarget > new ScorePacket(0L) && CursedNetworking.myPlayerPacket.health > 1)
+                    {
+                        ____remainingTarget = new ScorePacket(-1);
                     }
                 }
             }
@@ -1578,6 +1587,7 @@ namespace CWMultiplayer
                 }
             }
             if(MultiplayerManager.debugMode) MelonLogger.Msg("Error: Couldn't Find Character");
+            foeBoss = null;
         }
     }
     public class CursedNetworking
